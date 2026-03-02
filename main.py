@@ -7,132 +7,116 @@ import socketpool
 import asyncio
 from adafruit_httpserver import Server, Request, Response, Websocket, GET
 
-
-####################################################
-#Temperatuur lezen
-####################################################
-#Sensoren mappen op basis van postie in de auto.
+# --- CONFIGURATIE ---
 SENSOR_MAP = {
-    "286C8CBC000000C9" : "LinksBoven"
+    "286C8CBC000000C9": "LinksBoven",
+    # Voeg hier je andere 4 sensoren toe zodra je de ID's hebt
 }
-
-# 1. Initialiseer de OneWire bus op pin GP22
-ow_bus = OneWireBus(board.GP22)
-
-# 2. Scan de bus en maak een lijst van sensor-objecten met hun namen
-def initialiseer_sensoren():
-    gevonden_devices = ow_bus.scan()
-    sensor_lijst = []
-    
-    print(f"Systeem heeft {len(gevonden_devices)} sensoren gevonden op de bus.")
-    
-    for device in gevonden_devices:
-        # Maak het DS18X20 object aan
-        sensor_obj = adafruit_ds18x20.DS18X20(ow_bus, device)
-        
-        # Haal het unieke Hex-ID op
-        id_hex = "".join([f"{b:02X}" for b in device.rom])
-        
-        # Zoek de naam op in onze SENSOR_MAP
-        # Als het ID niet in de lijst staat, gebruiken we "Onbekend" + ID
-        naam = SENSOR_MAP.get(id_hex, f"Onbekend ({id_hex})")
-        
-        sensor_lijst.append({
-            "object": sensor_obj,
-            "naam": naam,
-            "id": id_hex
-        })
-    return sensor_lijst
-
-# Start de initialisatie
-mijn_sensoren = initialiseer_sensoren()
-
-print("-" * 40)
-print(f"{'LOCATIE':<15} | {'TEMPERATUUR':<12}")
-print("-" * 40)
-
-# 3. Main loop voor het uitlezen
-while True:
-    for s in mijn_sensoren:
-        try:
-            # Lees de temperatuur uit
-            temp = s["object"].temperature
-            print(f"{s['naam']:<15} | {temp:>10.2f}°C")
-        except Exception as e:
-            # Als een specifieke sensor faalt, printen we een foutmelding ipv te crashen
-            print(f"{s['naam']:<15} | FOUT: {e}")
-
-    print("-" * 40)
-    
-    # Wacht 5 seconden voor de volgende meting
-    time.sleep(5)
-
-
-################################################
-# WiFi access point opstarten
-################################################
 
 AP_SSID = "Air Carditioning"
 AP_PASSWORD = "2026MECH2A1"
 
-print(f"Opstart WiFi Access Point: {AP_SSID}...")
-try:
-    wifi.radio.start_ap(AP_SSID, AP_PASSWORD)
-    
-    # When creating a network, the IP address uses a slightly different command:
-    ap_ip = str(wifi.radio.ipv4_address_ap) 
-    
-    print("Access Point aangemaakt!")
-    print(f"IP Address: {ap_ip}")
-except Exception as e:
-    print("Access Point niet kunnen opstarten:", e)
-    raise
-
-# 2. Setup van de HTTP Server en WebSocket pool
-pool = socketpool.SocketPool(wifi.radio)
-server = Server(pool, debug=True)
+# --- GLOBALE VARIABELEN ---
+ow_bus = OneWireBus(board.GP22)
+mijn_sensoren = []
+laatste_meting = "Wachten op sensoren..."
 websocket = None
 
-# 3. HTML Template 
+# --- INITIALISATIE FUNCTIES ---
+def initialiseer_sensoren():
+    gevonden_devices = ow_bus.scan()
+    sensor_lijst = []
+    print(f"Systeem heeft {len(gevonden_devices)} sensoren gevonden.")
+    
+    for device in gevonden_devices:
+        sensor_obj = adafruit_ds18x20.DS18X20(ow_bus, device)
+        id_hex = "".join([f"{b:02X}" for b in device.rom])
+        naam = SENSOR_MAP.get(id_hex, f"Onbekend ({id_hex})")
+        sensor_lijst.append({"object": sensor_obj, "naam": naam})
+    return sensor_lijst
+
+# --- ASYNC TAKEN ---
+async def lees_sensoren_taak():
+    """Leest elke 2 seconden de sensoren en update de globale string."""
+    global laatste_meting
+    while True:
+        berichten = []
+        for s in mijn_sensoren:
+            try:
+                temp = s["object"].temperature
+                berichten.append(f"{s['naam']}:{temp:.1f}")
+            except Exception:
+                berichten.append(f"{s['naam']}:FOUT")
+        
+        # Maak een string zoals "LinksBoven:21.5|Buiten:15.0"
+        laatste_meting = "|".join(berichten)
+        print("Meting:", laatste_meting)
+        await asyncio.sleep(2)
+
+async def poll_server():
+    while True:
+        server.poll()
+        await asyncio.sleep(0.1)
+
+async def handle_websocket():
+    global websocket
+    while True:
+        if websocket is not None:
+            try:
+                # 1. Ontvang eventuele data (optioneel)
+                websocket.receive(fail_silently=True)
+                
+                # 2. STUUR DE TEMPERATUREN naar de website
+                websocket.send_message(laatste_meting, fail_silently=True)
+            except Exception as e:
+                print("WebSocket fout:", e)
+                websocket = None 
+        await asyncio.sleep(1) # Update de website elke seconde
+
+# --- NETWERK SETUP ---
+print(f"Opstart WiFi AP: {AP_SSID}...")
+wifi.radio.start_ap(AP_SSID, AP_PASSWORD)
+ap_ip = str(wifi.radio.ipv4_address_ap)
+
+pool = socketpool.SocketPool(wifi.radio)
+server = Server(pool, debug=True)
+
+# --- HTML TEMPLATE (Met tabel voor 5 sensoren) ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pico 2 W AP WebSocket</title>
     <style>
-        body { font-family: sans-serif; text-align: center; margin-top: 50px; background-color: #f4f4f9; }
-        button { padding: 10px 20px; font-size: 16px; cursor: pointer; border-radius: 5px; border: 1px solid #ccc; background-color: #007bff; color: white; }
-        button:active { background-color: #0056b3; }
-        #msg { color: #d9534f; font-weight: bold; font-size: 1.2em; }
+        body { font-family: sans-serif; text-align: center; background-color: #f4f4f9; }
+        .box { max-width: 400px; margin: 50px auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        table { width: 100%; margin-top: 20px; border-collapse: collapse; }
+        td { padding: 10px; border-bottom: 1px solid #eee; text-align: left; }
+        .temp { font-weight: bold; color: #007bff; text-align: right; }
     </style>
 </head>
 <body>
-    <h2>Test voor netwerk van de Carditioning</h2>
-    <button onclick="sendMessage()">Stuur testdata naar vs code</button>
-    <p><strong>Berichten van pico:</strong></p>
-    <p id="msg">Wachten op data...</p>
-
+    <div class="box">
+        <h2>Carditioning Monitor</h2>
+        <table id="sensorTable"><tr><td>Laden...</td></tr></table>
+        <p id="status" style="color:gray; font-size:0.8em;">Verbinden...</p>
+    </div>
     <script>
-        // Connect to the WebSocket route dynamically
         let ws = new WebSocket('ws://' + location.host + '/ws');
-        
-        ws.onopen = () => console.log('WebSocket connection opened');
-        ws.onclose = () => console.log('WebSocket connection closed');
-        
         ws.onmessage = (event) => {
-            document.getElementById('msg').innerText = event.data;
-            document.getElementById('msg').style.color = '#5cb85c';
+            let data = event.data.split('|');
+            let table = document.getElementById('sensorTable');
+            let html = "";
+            data.forEach(item => {
+                let p = item.split(':');
+                if(p.length == 2) {
+                    html += `<tr><td>${p[0]}</td><td class="temp">${p[1]}°C</td></tr>`;
+                }
+            });
+            table.innerHTML = html;
+            document.getElementById('status').innerText = "Live updates actief";
         };
-
-        function sendMessage() {
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.send("Button Clicked on Laptop!");
-            } else {
-                alert("WebSocket is not connected.");
-            }
-        }
+        ws.onclose = () => document.getElementById('status').innerText = "Verbinding verbroken";
     </script>
 </body>
 </html>
@@ -140,63 +124,28 @@ HTML_TEMPLATE = """
 
 @server.route("/", GET)
 def serve_client(request: Request):
-    """Serve the HTML interface."""
     return Response(request, HTML_TEMPLATE, content_type="text/html")
 
 @server.route("/ws", GET)
 def connect_websocket(request: Request):
-    """Upgrade the HTTP request to a WebSocket."""
     global websocket
-    if websocket is not None:
-        websocket.close()
+    if websocket is not None: websocket.close()
     websocket = Websocket(request)
-    print("Laptop connected via WebSocket!")
     return websocket
 
-# 4. Asynchronous Task Handlers
-async def poll_server():
-    """Continuously poll the HTTP server."""
-    while True:
-        server.poll()
-        await asyncio.sleep(0)
-
-async def handle_websocket():
-    """Handle incoming and outgoing WS messages."""
-    global websocket
-    counter = 0
-    while True:
-        if websocket is not None:
-            try:
-                # Checken of er berichten van de laptop worden verzonden
-                if (data := websocket.receive(fail_silently=True)) is not None:
-                    print(f"Received from laptop: {data}")
-                
-                # Counter doorsturen naar laptop
-                websocket.send_message(f"Pico Uptime Count: {counter}", fail_silently=True)
-                counter += 1
-            except Exception as e:
-                print("WebSocket disconnected:", e)
-                websocket = None 
-                
-        await asyncio.sleep(1)
-
+# --- MAIN RUNNER ---
 async def main():
-    """Main execution loop."""
-    server.start(ap_ip)
-    print(f"Server is opgestart en aan het werk!")
-    print(f"1. Maak verbinding met Wi-Fi netwerk: '{AP_SSID}'.")
-    print(f"2. Passwoord van dit netwerk is: '{AP_PASSWORD}'.")
-    print(f"3. Open http://{ap_ip}:5000 in uw browser!")
+    global mijn_sensoren
+    mijn_sensoren = initialiseer_sensoren()
     
+    server.start(ap_ip)
+    print(f"Server draait op http://{ap_ip}")
+    
+    # Draai alle drie de processen tegelijk
     await asyncio.gather(
-        asyncio.create_task(poll_server()),
-        asyncio.create_task(handle_websocket())
+        poll_server(),
+        handle_websocket(),
+        lees_sensoren_taak()
     )
 
-# Websocket opstarten 
 asyncio.run(main())
-
-
-
-
-
