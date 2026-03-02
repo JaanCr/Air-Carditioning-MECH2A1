@@ -16,6 +16,10 @@ def read_temp(sensor_id):
 #  PELTIER MET H-BRUG + PID (CIRCUITPYTHON)
 # =========================================================
 class PeltierHBridge:
+    def reset_pid(self):
+        self.integral = 0
+        self.last_error = 0
+
     def __init__(self, pin_in1, pin_in2, pin_pwm, Kp=1.0, Ki=0.05, Kd=0.2):
 
         # H-brug pinnen
@@ -40,6 +44,11 @@ class PeltierHBridge:
         # Doeltemperatuur
         self.target = 20.0
 
+        self.last_direction = 0
+        self.last_switch_time = time.monotonic()
+        self.switch_delay = 10.0   # seconden tussen koelen ↔ verwarmen
+        self.last_update = time.monotonic()
+
     def set_target(self, t):
         self.target = t
 
@@ -58,6 +67,7 @@ class PeltierHBridge:
             self.in1.value = False
             self.in2.value = False
             self.pwm.duty_cycle = 0
+            self.last_direction = 0
 
         elif direction == 1:  # koelen
             self.in1.value = True
@@ -69,25 +79,60 @@ class PeltierHBridge:
             self.in2.value = True
             self.pwm.duty_cycle = duty
 
+
     def update(self, current_temp):
+        if current_temp is None or current_temp < -20 or current_temp > 50: #failsafe 
+            self.set_output(0, 0)
+            return 0
+        
+        now = time.monotonic()
+        dt= now - self.last_update
+        self.last_update = now
+       
+        if dt <= 0:
+            return 0
+
         # PID berekening
         error = self.target - current_temp
-        self.integral += error
-        derivative = error - self.last_error
+        if abs(error) < 0.1:  # alleen integreren als we dichtbij zijn
+            error=0
+        self.integral += error * dt
+        self.integral = max(-50, min(50, self.integral))
+        derivative = (error - self.last_error) / dt
 
         output = self.Kp * error + self.Ki * self.integral + self.Kd * derivative
         self.last_error = error
-
+        
+        
         # Dode zone
         if abs(output) < 0.05:
             self.set_output(0, 0)
             return 0
 
+        # gewenste richting bepalen
+        desired_direction = 1 if output > 0 else -1
+
+        # check of richtingswissel mag
+        if (desired_direction != self.last_direction and now - self.last_switch_time < self.switch_delay):
+        # te snel wisselen → alles uit
+            self.set_output(0, 0)
+            return 0
+        
+        
         # Richting bepalen
         if output > 0:
-            self.set_output(1, min(1, output))   # koelen
+            if self.last_direction != 1:
+                self.last_switch_time = now
+                self.last_direction = 1
+                self.reset_pid()
+            self.set_output(1, min(1, output))
+
         else:
-            self.set_output(-1, min(1, -output)) # verwarmen
+            if self.last_direction != -1:
+                self.last_switch_time = now
+                self.last_direction = -1
+                self.reset_pid()
+            self.set_output(-1, min(1, -output))
 
         return output
 
