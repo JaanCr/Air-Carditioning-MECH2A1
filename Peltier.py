@@ -1,5 +1,7 @@
-from machine import Pin, PWM
 import time
+import board
+import pwmio
+from digitalio import DigitalInOut, Direction
 
 # =========================================================
 #  TEMPERATUURSENSOREN (ABSTRACT)
@@ -11,29 +13,32 @@ def read_temp(sensor_id):
 
 
 # =========================================================
-#  PELTIER MET H-BRUG + PID
+#  PELTIER MET H-BRUG + PID (CIRCUITPYTHON)
 # =========================================================
 class PeltierHBridge:
     def __init__(self, pin_in1, pin_in2, pin_pwm, Kp=1.0, Ki=0.05, Kd=0.2):
-        # H-brug pinnen
-        self.in1 = Pin(pin_in1, Pin.OUT)
-        self.in2 = Pin(pin_in2, Pin.OUT)
 
-        # PWM pin
-        self.pwm = PWM(Pin(pin_pwm))
-        self.pwm.freq(20000)  # stil PWM-signaal frequentie van de pico word hier ingesteld
+        # H-brug pinnen
+        self.in1 = DigitalInOut(pin_in1)
+        self.in1.direction = Direction.OUTPUT
+
+        self.in2 = DigitalInOut(pin_in2)
+        self.in2.direction = Direction.OUTPUT
+
+        # PWM pin (0–65535 duty cycle)
+        self.pwm = pwmio.PWMOut(pin_pwm, frequency=20000, duty_cycle=0)
 
         # PID parameters
-        self.Kp = Kp #(1.0) waardes die de PID vergelijking bepalen
-        self.Ki = Ki #(0.05)
-        self.Kd = Kd #(0.2)
+        self.Kp = Kp
+        self.Ki = Ki
+        self.Kd = Kd
 
         # PID variabelen
-        self.integral = 0 #begin waarden
+        self.integral = 0
         self.last_error = 0
 
         # Doeltemperatuur
-        self.target = 20.0 #automatische starttemperatuur
+        self.target = 20.0
 
     def set_target(self, t):
         self.target = t
@@ -49,24 +54,24 @@ class PeltierHBridge:
         power = max(0, min(1, power))
         duty = int(power * 65535)
 
-        if direction == 0: # uit
-            self.in1.value(0)
-            self.in2.value(0)
-            self.pwm.duty_u16(0)
+        if direction == 0:
+            self.in1.value = False
+            self.in2.value = False
+            self.pwm.duty_cycle = 0
 
         elif direction == 1:  # koelen
-            self.in1.value(1)
-            self.in2.value(0)
-            self.pwm.duty_u16(duty)
+            self.in1.value = True
+            self.in2.value = False
+            self.pwm.duty_cycle = duty
 
         elif direction == -1:  # verwarmen
-            self.in1.value(0)
-            self.in2.value(1)
-            self.pwm.duty_u16(duty)
+            self.in1.value = False
+            self.in2.value = True
+            self.pwm.duty_cycle = duty
 
     def update(self, current_temp):
         # PID berekening
-        error = self.target - current_temp #sterke vereenvoudiging in de int en dif
+        error = self.target - current_temp
         self.integral += error
         derivative = error - self.last_error
 
@@ -74,7 +79,7 @@ class PeltierHBridge:
         self.last_error = error
 
         # Dode zone
-        if abs(output) < 0.05: # sturen we niet bij moeten we nog bepalen hoe groot die is
+        if abs(output) < 0.05:
             self.set_output(0, 0)
             return 0
 
@@ -82,7 +87,7 @@ class PeltierHBridge:
         if output > 0:
             self.set_output(1, min(1, output))   # koelen
         else:
-            self.set_output(-1, min(1, -output)) # verwarmen # output moet positief zijn
+            self.set_output(-1, min(1, -output)) # verwarmen
 
         return output
 
@@ -93,11 +98,11 @@ class PeltierHBridge:
 
 NUM_SENSORS = 5
 
-# Peltier 0 → H-brug op pins (IN1=10, IN2=11, PWM=12)
-# Peltier 1 → H-brug op pins (IN1=13, IN2=14, PWM=15)
+# Peltier 0 → H-brug op pins (IN1=GP10, IN2=GP11, PWM=GP12)
+# Peltier 1 → H-brug op pins (IN1=GP13, IN2=GP14, PWM=GP15)
 peltier = [
-    PeltierHBridge(10, 11, 12),
-    PeltierHBridge(13, 14, 15)
+    PeltierHBridge(board.GP10, board.GP11, board.GP12),
+    PeltierHBridge(board.GP13, board.GP14, board.GP15)
 ]
 
 # Doeltemperaturen instellen
@@ -109,14 +114,11 @@ peltier[1].set_target(30.0)   # verwarmen
 #  MAIN LOOP
 # =========================================================
 while True:
-    # 5 sensoren uitlezen
     temps = [read_temp(i) for i in range(NUM_SENSORS)]
 
-    # Voorbeeld: sensor 0 stuurt Peltier 0, sensor 1 stuurt Peltier 1
     out0 = peltier[0].update(temps[0])
     out1 = peltier[1].update(temps[1])
 
-    print("T0:", temps[0], "OUT0:", out0,
-          "| T1:", temps[1], "OUT1:", out1)
+    print("T0:", temps[0], "OUT0:", out0," T1:", temps[1], "OUT1:", out1)
 
     time.sleep(1)
