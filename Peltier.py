@@ -51,6 +51,7 @@ class PeltierHBridge:
 
     def set_target(self, t):
         self.target = t
+        #t zal vervangen worden door de waarde die de gebruiker op de website ingeeft
 
     def set_output(self, direction, power):
         """

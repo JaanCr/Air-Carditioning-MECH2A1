@@ -31,7 +31,6 @@ header {
 }
 
 /* style cards*/
-
 .grid {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
@@ -61,7 +60,7 @@ header {
     background: #ddd;
 }
 
-#theme_btn {
+#theme-btn {
     min-width: 140px;
     transition: transform 0.25s;
 }
@@ -78,7 +77,6 @@ header {
 }
 
 /* button */
-
 button {
     background-color: #3498db;
     color: white;
@@ -98,6 +96,3 @@ button:active {
     background-color: #004f83;
     transform: scale(1);
 }
-
-
-

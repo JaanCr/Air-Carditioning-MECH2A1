@@ -9,6 +9,9 @@ import pwmio
 # =========================================================
 # VENTILATOR KLASS
 # =========================================================
+
+#set_speed nog aanpassen naargelang de ingegeven temperatuur op de webbrowser
+
 class Fan:
     def __init__(self, pwm_pin, frequency=25000):
         self.pwm = pwmio.PWMOut(pwm_pin, frequency=frequency, duty_cycle=0)
@@ -23,15 +26,15 @@ class Fan:
 # =========================================================
 # INITIALISATIE VAN 2 VENTILATORS
 # =========================================================
-fan1 = Fan(board.GP16)
+fan1 = Fan(board.GP16)   #pinnen nummers evenetueel nog aanpassen naargelang van gemak qua ordening
 fan2 = Fan(board.GP17)
 
 # =========================================================
 # MAIN LOOP
 # =========================================================
 while True:
-    # Hier kan je logica toevoegen om snelheid te bepalen
-    # Voorbeeld: fan1 50%, fan2 80%
+    #main loop
+    #nog linken met de website om zelf de temp te kunnen regelen
     fan1.set_speed(0.5)
     fan2.set_speed(0.8)
 

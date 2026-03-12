@@ -1,28 +1,161 @@
 import time
 import board
+import pwmio
+from digitalio import DigitalInOut, Direction
 from adafruit_onewire.bus import OneWireBus
 import adafruit_ds18x20
 import wifi
 import socketpool
 import asyncio
-from adafruit_httpserver import Server, Request, Response, Websocket, GET
+import json
+from adafruit_httpserver import Server, Request, Response, Websocket, GET, FileResponse
 
-# --- CONFIGURATIE ---
+# =========================================================
+# CONFIGURATIE sensoren
+# =========================================================
+
 SENSOR_MAP = {
-    "286C8CBC000000C9": "LinksBoven",
-    # Voeg hier je andere 4 sensoren toe zodra je de ID's hebt
+    "286C8CBC000000C9": "Links",
+    # Overige sensoren moeten nog getest worden
 }
 
+
+#passwoord en naam van het netwerk
 AP_SSID = "Air Carditioning"
 AP_PASSWORD = "2026MECH2A1"
+NUM_SENSORS = 5
 
-# --- GLOBALE VARIABELEN ---
+# =========================================================
+# KLASSEN (Fan & Peltier)
+# =========================================================
+class Fan:
+    def __init__(self, pwm_pin, frequency=25000):
+        self.pwm = pwmio.PWMOut(pwm_pin, frequency=frequency, duty_cycle=0)
+        self.speed = 0.0  # 0.0 – 1.0
+
+    def set_speed(self, speed):
+        self.speed = max(0, min(1, float(speed)))
+        self.pwm.duty_cycle = int(self.speed * 65535)
+
+class PeltierHBridge:
+    def __init__(self, pin_in1, pin_in2, pin_pwm, Kp=1.0, Ki=0.05, Kd=0.2):
+        self.in1 = DigitalInOut(pin_in1)
+        self.in1.direction = Direction.OUTPUT
+        self.in2 = DigitalInOut(pin_in2)
+        self.in2.direction = Direction.OUTPUT
+        self.pwm = pwmio.PWMOut(pin_pwm, frequency=20000, duty_cycle=0)
+
+        self.Kp = Kp
+        self.Ki = Ki
+        self.Kd = Kd
+
+        self.integral = 0
+        self.last_error = 0
+        self.target = 20.0
+        self.last_direction = 0
+        self.last_switch_time = time.monotonic()
+        self.switch_delay = 10.0   
+        self.last_update = time.monotonic()
+
+    def reset_pid(self):
+        self.integral = 0
+        self.last_error = 0
+
+    def set_target(self, t):
+        self.target = float(t)
+
+    def set_output(self, direction, power):
+        power = max(0, min(1, power))
+        duty = int(power * 65535)
+
+        if direction == 0:
+            self.in1.value = False
+            self.in2.value = False
+            self.pwm.duty_cycle = 0
+            self.last_direction = 0
+        elif direction == 1:  # koelen
+            self.in1.value = True
+            self.in2.value = False
+            self.pwm.duty_cycle = duty
+        elif direction == -1:  # verwarmen
+            self.in1.value = False
+            self.in2.value = True
+            self.pwm.duty_cycle = duty
+
+    def update(self, current_temp):
+        if current_temp is None or current_temp < -20 or current_temp > 50:
+            self.set_output(0, 0)
+            return 0
+        
+        now = time.monotonic()
+        dt = now - self.last_update
+        self.last_update = now
+       
+        if dt <= 0: return 0
+
+        error = self.target - current_temp
+        if abs(error) < 0.1: error = 0
+        self.integral += error * dt
+        self.integral = max(-50, min(50, self.integral))
+        derivative = (error - self.last_error) / dt
+
+        output = self.Kp * error + self.Ki * self.integral + self.Kd * derivative
+        self.last_error = error
+        
+        if abs(output) < 0.05:
+            self.set_output(0, 0)
+            return 0
+
+        desired_direction = 1 if output > 0 else -1
+
+        if (desired_direction != self.last_direction and now - self.last_switch_time < self.switch_delay):
+            self.set_output(0, 0)
+            return 0
+        
+        if output > 0:
+            if self.last_direction != 1:
+                self.last_switch_time = now
+                self.last_direction = 1
+                self.reset_pid()
+            self.set_output(1, min(1, output))
+        else:
+            if self.last_direction != -1:
+                self.last_switch_time = now
+                self.last_direction = -1
+                self.reset_pid()
+            self.set_output(-1, min(1, -output))
+
+        return output
+
+# =========================================================
+# GLOBALE VARIABELEN & INITIALISATIE HARDWARE
+# =========================================================
 ow_bus = OneWireBus(board.GP22)
 mijn_sensoren = []
-laatste_meting = "Wachten op sensoren..."
+
+# Variabelen voor de website (JSON payload)
+sensor_data = {
+    "temperatureLinks": "--",
+    "temperatureRechts": "--",
+    "temperatureBuiten": "--",
+    "temperatureGem": "--"
+}
+
+# Ruwe float data voor de PID-regelaar
+ruwe_temps = {"Links": None, "Rechts": None}
+
 websocket = None
 
-# --- INITIALISATIE FUNCTIES ---
+# Fans definiëren
+fan1 = Fan(board.GP16) # Links
+fan2 = Fan(board.GP17) # Rechts
+
+# Peltiers (Aanname: Peltier 0 = Links, Peltier 1 = Rechts)
+peltiers = [
+    PeltierHBridge(board.GP10, board.GP11, board.GP12), # Links
+    PeltierHBridge(board.GP13, board.GP14, board.GP15)  # Rechts
+]
+
 def initialiseer_sensoren():
     gevonden_devices = ow_bus.scan()
     sensor_lijst = []
@@ -31,49 +164,114 @@ def initialiseer_sensoren():
     for device in gevonden_devices:
         sensor_obj = adafruit_ds18x20.DS18X20(ow_bus, device)
         id_hex = "".join([f"{b:02X}" for b in device.rom])
-        naam = SENSOR_MAP.get(id_hex, f"Onbekend ({id_hex})")
+        naam = SENSOR_MAP.get(id_hex, f"Onbekend_{id_hex[-4:]}")
         sensor_lijst.append({"object": sensor_obj, "naam": naam})
     return sensor_lijst
 
-# --- ASYNC TAKEN ---
+# =========================================================
+# ASYNC TAKEN
+# =========================================================
 async def lees_sensoren_taak():
-    """Leest elke 2 seconden de sensoren en update de globale string."""
-    global laatste_meting
+    global sensor_data, ruwe_temps
     while True:
-        berichten = []
+        som_binnen = 0.0
+        aantal_binnen = 0
+        
         for s in mijn_sensoren:
+            naam = s["naam"]
             try:
                 temp = s["object"].temperature
-                berichten.append(f"{s['naam']}:{temp:.1f}")
+                # Formatteer naar 1 decimaal voor de website
+                temp_str = f"{temp:.1f}"
+                
+                if naam == "Links":
+                    sensor_data["temperatureLinks"] = temp_str
+                    ruwe_temps["Links"] = temp
+                    som_binnen += temp
+                    aantal_binnen += 1
+                elif naam == "Rechts":
+                    sensor_data["temperatureRechts"] = temp_str
+                    ruwe_temps["Rechts"] = temp
+                    som_binnen += temp
+                    aantal_binnen += 1
+                elif naam == "Buiten":
+                    sensor_data["temperatureBuiten"] = temp_str
             except Exception:
-                berichten.append(f"{s['naam']}:FOUT")
-        
-        # Maak een string zoals "LinksBoven:21.5|Buiten:15.0"
-        laatste_meting = "|".join(berichten)
-        print("Meting:", laatste_meting)
+                if naam in ["Links", "Rechts", "Buiten"]:
+                    sensor_data[f"temperature{naam}"] = "FOUT"
+                    if naam in ruwe_temps:
+                        ruwe_temps[naam] = None
+
+        if aantal_binnen > 0:
+            gemiddelde = som_binnen / aantal_binnen
+            sensor_data["temperatureGem"] = f"{gemiddelde:.1f}"
+        else:
+            sensor_data["temperatureGem"] = "--"
+            
         await asyncio.sleep(2)
+
+async def regel_hardware_taak():   #regeling van de teperatuur obv gemeten temp en huidige temp
+    while True:
+        if ruwe_temps["Links"] is not None:
+            peltiers[0].update(ruwe_temps["Links"])
+        
+        if ruwe_temps["Rechts"] is not None:
+            peltiers[1].update(ruwe_temps["Rechts"])
+            
+        await asyncio.sleep(1)
 
 async def poll_server():
     while True:
         server.poll()
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.05)
 
 async def handle_websocket():
     global websocket
     while True:
         if websocket is not None:
             try:
-                # 1. Ontvang eventuele data (optioneel)
-                websocket.receive(fail_silently=True)
+                data = websocket.receive(fail_silently=True)
+                if data:
+                    print(f"Websocket Inkomend: {data}")
+                    
+                    if "=" in data:
+                        cmd, val = data.split("=")
+                        try:
+                            val_float = float(val)
+                            if cmd == "TEMP_LINKS":
+                                peltiers[0].set_target(val_float)
+                                print(f"Doel Links -> {val_float}")
+                            elif cmd == "TEMP_RECHTS":
+                                peltiers[1].set_target(val_float)
+                                print(f"Doel Rechts -> {val_float}")
+                        except ValueError:
+                            pass
+                    else:
+                        # Toggles voor de Fans
+                        if data == "FanOnOffLinks":
+                            nieuwe_snelheid = 0.0 if fan1.speed > 0 else 1.0
+                            fan1.set_speed(nieuwe_snelheid)
+                        elif data == "FanOnOffRechts":
+                            nieuwe_snelheid = 0.0 if fan2.speed > 0 else 1.0
+                            fan2.set_speed(nieuwe_snelheid)
+                        elif data == "TurnOnOff":
+                            # Beide ventilatoren tesamen uit zetten
+                            nieuwe_snelheid = 0.0 if (fan1.speed > 0 or fan2.speed > 0) else 1.0
+                            fan1.set_speed(nieuwe_snelheid)
+                            fan2.set_speed(nieuwe_snelheid)
                 
-                # 2. STUUR DE TEMPERATUREN naar de website
-                websocket.send_message(laatste_meting, fail_silently=True)
+                # Huidige temperaturen verzenden als JSON naar websocket
+                json_string = json.dumps(sensor_data)
+                websocket.send_message(json_string, fail_silently=True)
+                
             except Exception as e:
                 print("WebSocket fout:", e)
                 websocket = None 
-        await asyncio.sleep(1) # Update de website elke seconde
+        await asyncio.sleep(0.5)
 
-# --- NETWERK SETUP ---
+# =========================================================
+# NETWERK SETUP & SERVER ROUTES
+# =========================================================
 print(f"Opstart WiFi AP: {AP_SSID}...")
 wifi.radio.start_ap(AP_SSID, AP_PASSWORD)
 ap_ip = str(wifi.radio.ipv4_address_ap)
@@ -81,59 +279,33 @@ ap_ip = str(wifi.radio.ipv4_address_ap)
 pool = socketpool.SocketPool(wifi.radio)
 server = Server(pool, debug=True)
 
-# --- HTML TEMPLATE (Met tabel voor 5 sensoren) ---
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <style>
-        body { font-family: sans-serif; text-align: center; background-color: #f4f4f9; }
-        .box { max-width: 400px; margin: 50px auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
-        table { width: 100%; margin-top: 20px; border-collapse: collapse; }
-        td { padding: 10px; border-bottom: 1px solid #eee; text-align: left; }
-        .temp { font-weight: bold; color: #007bff; text-align: right; }
-    </style>
-</head>
-<body>
-    <div class="box">
-        <h2>Carditioning Monitor</h2>
-        <table id="sensorTable"><tr><td>Laden...</td></tr></table>
-        <p id="status" style="color:gray; font-size:0.8em;">Verbinden...</p>
-    </div>
-    <script>
-        let ws = new WebSocket('ws://' + location.host + '/ws');
-        ws.onmessage = (event) => {
-            let data = event.data.split('|');
-            let table = document.getElementById('sensorTable');
-            let html = "";
-            data.forEach(item => {
-                let p = item.split(':');
-                if(p.length == 2) {
-                    html += `<tr><td>${p[0]}</td><td class="temp">${p[1]}°C</td></tr>`;
-                }
-            });
-            table.innerHTML = html;
-            document.getElementById('status').innerText = "Live updates actief";
-        };
-        ws.onclose = () => document.getElementById('status').innerText = "Verbinding verbroken";
-    </script>
-</body>
-</html>
-"""
-
+# HTML bestand
 @server.route("/", GET)
-def serve_client(request: Request):
-    return Response(request, HTML_TEMPLATE, content_type="text/html")
+def serve_html(request: Request):
+    return FileResponse(request, "browsertests.html", "text/html")
 
-@server.route("/ws", GET)
+# CSS bestand
+@server.route("/style-webpage.css", GET)
+def serve_css(request: Request):
+    return FileResponse(request, "style-webpage.css", "text/css")
+
+# JS bestand
+@server.route("/webpage.js", GET)
+def serve_js(request: Request):
+    return FileResponse(request, "webpage.js", "application/javascript")
+
+# JavaScript gebruiken voor de connectie
+@server.route("/connect-websocket", GET)
 def connect_websocket(request: Request):
     global websocket
-    if websocket is not None: websocket.close()
+    if websocket is not None: 
+        websocket.close()
     websocket = Websocket(request)
     return websocket
 
-# --- MAIN RUNNER ---
+# =========================================================
+# MAIN RUNNER
+# =========================================================
 async def main():
     global mijn_sensoren
     mijn_sensoren = initialiseer_sensoren()
@@ -141,11 +313,11 @@ async def main():
     server.start(ap_ip)
     print(f"Server draait op http://{ap_ip}")
     
-    # Draai alle drie de processen tegelijk
     await asyncio.gather(
         poll_server(),
         handle_websocket(),
-        lees_sensoren_taak()
+        lees_sensoren_taak(),
+        regel_hardware_taak()
     )
 
 asyncio.run(main())
