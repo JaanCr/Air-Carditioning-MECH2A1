@@ -1,0 +1,103 @@
+/* dark mode*/
+:root {
+    --bg-color: #d9d9f5;
+    --card-bg: #eff2fa;
+    --text-color: #333333;
+}
+
+/* THE SWITCH LOGIC */
+body.dark-mode {
+    --bg-color: #190303;
+    --card-bg: #252525;
+    --text-color: #f0f0f0;
+}
+
+/* style website*/
+body {
+    font-family: sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    transition: 0.25s;
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    align-items: center;
+}
+
+header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+/* style cards*/
+
+.grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    width: 95%;
+    gap: 25px;
+    margin: 15px;
+}
+
+.kolom {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.card {
+    background: var(--card-bg);
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    text-align: center;
+}
+
+/* status text */
+#status {
+    padding: 10px;
+    border-radius: 5px;
+    background: #ddd;
+}
+
+#theme_btn {
+    min-width: 140px;
+    transition: transform 0.25s;
+}
+
+.connected { 
+    color: white; 
+    background-color: #2ecc71 !important; 
+}
+
+.disconnected { 
+    color: white; 
+    background-color: #e74c3c !important; 
+    text-align: center;
+}
+
+/* button */
+
+button {
+    background-color: #3498db;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+    margin: 5px;
+}
+
+button:hover {
+    background-color: #1e8bd3;
+    transform: scale(1.025);
+}
+
+button:active {
+    background-color: #004f83;
+    transform: scale(1);
+}
+
+
+
