@@ -302,22 +302,22 @@ wifi.radio.start_ap(AP_SSID, AP_PASSWORD)
 ap_ip = str(wifi.radio.ipv4_address_ap)
 
 pool = socketpool.SocketPool(wifi.radio)
-server = Server(pool, debug=True)
+server = Server(pool, "/",  debug=True)
 
-# HTML bestand
+#HTML bestand
 @server.route("/", GET)
 def serve_html(request: Request):
-    return FileResponse(request, "browsertests.html", "text/html")
+    return FileResponse(request, "browsertests.html")
 
-# CSS bestand
+#CSS bestand
 @server.route("/style-webpage.css", GET)
 def serve_css(request: Request):
-    return FileResponse(request, "style-webpage.css", "text/css")
+    return FileResponse(request, "style-webpage.css")
 
-# JS bestand
+#Javascript bestand
 @server.route("/webpage.js", GET)
 def serve_js(request: Request):
-    return FileResponse(request, "webpage.js", "application/javascript")
+    return FileResponse(request, "webpage.js")
 
 # JavaScript gebruiken voor de connectie
 @server.route("/connect-websocket", GET)
@@ -326,6 +326,7 @@ def connect_websocket(request: Request):
     if websocket is not None: 
         websocket.close()
     websocket = Websocket(request)
+    print("Websocket verbonden!")
     return websocket
 
 # =========================================================
