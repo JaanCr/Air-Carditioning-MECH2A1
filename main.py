@@ -141,7 +141,12 @@ sensor_data = {
     "temperatureLinks": "--",
     "temperatureRechts": "--",
     "temperatureBuiten": "--",
-    "temperatureGem": "--"
+    "temperatureGem": "--",
+    "statusLinksBoven": False,
+    "statusLinksOnder": False,
+    "statusRechtsBoven": False,
+    "statusRechtsOnder": False,
+    "statusBuiten": False
 }
 
 # Ruwe float data voor de PID-regelaar
@@ -180,12 +185,20 @@ async def lees_sensoren_taak():
         som_binnen = 0.0
         aantal_binnen = 0
 
+        for key in ["statusLinksBoven", "statusLinksOnder", "statusRechtsBoven", "statusRechtsOnder", "statusBuiten"]:
+            sensor_data[key] = False
+
         temps = {"LinksBoven": None, "LinksOnder": None, "RechtsBoven": None, "RechtsOnder": None}
 
         for s in mijn_sensoren:
             naam = s["naam"]
             try:
                 temp = s["object"].temperature
+
+                status_key = "status" + naam
+                if status_key in sensor_data:
+                    sensor_data[status_key] = True
+                
                 if naam in temps:
                     temps[naam] = temp
                 elif naam == "Buiten":
@@ -225,7 +238,7 @@ async def lees_sensoren_taak():
 
         await asyncio.sleep(2)
 
- 
+
 async def regel_hardware_taak():   #regeling van de teperatuur obv gemeten temp en huidige temp
     while True:
         if ruwe_temps["Links"] is not None:

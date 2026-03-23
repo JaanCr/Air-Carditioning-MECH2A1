@@ -27,10 +27,33 @@ function connect_socket() {
     
     socket.addEventListener("message", (event) => {
         const data = JSON.parse(event.data); 
+        
+        const updateDot = (id, isOnline) => {
+            const statusSens = document.getElementById(id);
+            if (isOnline) {
+                statusSens.classList.replace("offline", "online");
+            } else {
+                statusSens.classList.replace("online", "offline");
+            }
+        };
+
+        if (data.statusLinksBoven !== undefined) 
+            updateDot("statusLinksBoven", data.statusLinksBoven);
+        if (data.statusRechtsBoven !== undefined) 
+            updateDot("statusRechtsBoven", data.statusRechtsBoven);
+        if (data.statusBuiten !== undefined) 
+            updateDot("statusBuiten", data.statusBuiten);
+        if (data.statusLinksOnder !== undefined) 
+            updateDot("statusLinksOnder", data.statusLinksOnder);
+        if (data.statusRechtsOnder !== undefined) 
+            updateDot("statusRechtsOnder", data.statusRechtsOnder);
+
         document.getElementById("tempLinks").textContent = data.temperatureLinks;
         document.getElementById("tempRechts").textContent = data.temperatureRechts;
         document.getElementById("tempBuiten").textContent = data.temperatureBuiten;
         document.getElementById("tempGem").textContent = data.temperatureGem;
+        
+
     });
 
     socket.addEventListener("error", (event) => {

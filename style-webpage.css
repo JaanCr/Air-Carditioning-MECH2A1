@@ -37,6 +37,17 @@ header {
     width: 95%;
     gap: 25px;
     margin: 15px;
+    text-align: center;
+}
+
+.gridstatus {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    width: 95%;
+    gap: 25px;
+    margin: 15px;
+    text-align: center;
+
 }
 
 .kolom {
@@ -60,9 +71,13 @@ header {
 
 /* status text */
 #status {
+    max-width: 250px;
+    width: 100%;
+    margin: 0 auto;
     padding: 10px;
     border-radius: 5px;
     background: #ddd;
+    text-align: center;
 }
 
 #theme-btn {
@@ -73,12 +88,38 @@ header {
 .connected { 
     color: white; 
     background-color: #2ecc71 !important; 
+    text-align: center;
 }
 
 .disconnected { 
     color: white; 
     background-color: #e74c3c !important; 
     text-align: center;
+}
+
+.status-dot {
+    height: 10px;
+    width: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-left: 10px;
+    border: 1px solid rgba(0,0,0,0.2);
+}
+
+.status-item {
+    margin-bottom: 5px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.online {
+    background-color: #2ecc71 !important; 
+}
+
+.offline {
+    background-color: #e74c3c !important; 
 }
 
 /* button */
