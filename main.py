@@ -146,7 +146,9 @@ sensor_data = {
     "statusLinksOnder": False,
     "statusRechtsBoven": False,
     "statusRechtsOnder": False,
-    "statusBuiten": False
+    "statusBuiten": False,
+    "fanStatusLinks": False,
+    "fanStatusRechts": False
 }
 
 # Ruwe float data voor de PID-regelaar
@@ -296,7 +298,8 @@ async def handle_websocket():
                             fan1.set_speed(nieuwe_snelheid)
                             fan2.set_speed(nieuwe_snelheid)
                         
-
+                sensor_data["fanStatusLinks"] = fan1.speed > 0
+                sensor_data["fanStatusRechts"] = fan2.speed > 0
                 
                 # Huidige temperaturen verzenden als JSON naar websocket
                 json_string = json.dumps(sensor_data)
