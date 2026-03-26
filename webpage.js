@@ -52,6 +52,7 @@ function connect_socket() {
             updateFanButton("fanBtnLinks", data.fanStatusLinks);
         if (data.fanStatusRechts !== undefined)
             updateFanButton("fanBtnRechts", data.fanStatusRechts);
+
         
 
         document.getElementById("tempLinks").textContent = data.temperatureLinks;

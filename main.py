@@ -160,6 +160,9 @@ websocket = None
 fan1 = Fan(board.GP16) # Links
 fan2 = Fan(board.GP17) # Rechts
 
+last_Speed_Fan_Links = 0.5   # Start op 50%
+last_Speed_Fan_Rechts = 0.5  # Start op 50%
+
 # Peltiers (Aanname: Peltier 0 = Links, Peltier 1 = Rechts)
 peltiers = [
     PeltierHBridge(board.GP10, board.GP11, board.GP12), # Links
@@ -187,6 +190,7 @@ async def lees_sensoren_taak():
         som_binnen = 0.0
         aantal_binnen = 0
 
+        # default status voor sensoren
         for key in ["statusLinksBoven", "statusLinksOnder", "statusRechtsBoven", "statusRechtsOnder", "statusBuiten"]:
             sensor_data[key] = False
 
@@ -197,6 +201,7 @@ async def lees_sensoren_taak():
             try:
                 temp = s["object"].temperature
 
+                # status veranderen als sensor verbonden
                 status_key = "status" + naam
                 if status_key in sensor_data:
                     sensor_data[status_key] = True
@@ -257,7 +262,7 @@ async def poll_server():
         await asyncio.sleep(0.05)
 
 async def handle_websocket():
-    global websocket
+    global websocket, last_Speed_Fan_Rechts, last_Speed_Fan_Links
     while True:
         if websocket is not None:
             try:
@@ -279,25 +284,37 @@ async def handle_websocket():
                             # Fans regelen op basis van slider input    
                             elif cmd == "FAN_LINKS":
                                 fan1.set_speed(val_float / 100.0) #set speed verwacht waarde tussen 0-1, slider geeft 0-100
+                                if val_float > 0:
+                                    last_Speed_Fan_Links = val_float / 100.0
                             elif cmd == "FAN_RECHTS":
                                 fan2.set_speed(val_float / 100.0)
+                                if val_float > 0:
+                                    last_Speed_Fan_Rechts = val_float / 100.0
     
                         except ValueError:
                             pass
                     else:
                         # Toggles voor de Fans
                         if data == "FanOnOffLinks":
-                            nieuwe_snelheid = 0.0 if fan1.speed > 0 else 1.0
-                            fan1.set_speed(nieuwe_snelheid)
+                            if fan1.speed > 0:
+                                fan1.set_speed(0.0)
+                            else:
+                                fan1.set_speed(last_Speed_Fan_Links)
                         elif data == "FanOnOffRechts":
-                            nieuwe_snelheid = 0.0 if fan2.speed > 0 else 1.0
-                            fan2.set_speed(nieuwe_snelheid)
+                            if fan2.speed > 0:
+                                fan2.set_speed(0.0)
+                            else:
+                                fan2.set_speed(last_Speed_Fan_Rechts)
                         elif data == "TurnOnOff":
                             # Beide ventilatoren tesamen uit zetten
-                            nieuwe_snelheid = 0.0 if (fan1.speed > 0 or fan2.speed > 0) else 1.0
-                            fan1.set_speed(nieuwe_snelheid)
-                            fan2.set_speed(nieuwe_snelheid)
+                            if (fan1.speed > 0 or fan2.speed > 0):
+                                fan1.set_speed(0.0)
+                                fan2.set_speed(0.0)
+                            else:
+                                fan1.set_speed(last_Speed_Fan_Links)
+                                fan2.set_speed(last_Speed_Fan_Rechts)
                         
+                # status voor toggle fans button website(false/true)
                 sensor_data["fanStatusLinks"] = fan1.speed > 0
                 sensor_data["fanStatusRechts"] = fan2.speed > 0
                 
