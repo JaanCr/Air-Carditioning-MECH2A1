@@ -55,7 +55,7 @@
                 <p>Doel: <span id="doelLinks">20</span>°C</p>
                 <h3>Fan Links</h3>
                 <!-- FIX: was 'FanOnOffRechts' -->
-                <button id="fanBtnLinks" onclick="sendCommand('fanOnOffLinks')">Toggle Fan (OFF)</button>
+                <button id="fanBtnLinks" onclick="sendCommand('FanOnOffLinks')">Toggle Fan (OFF)</button>
                 <input type="range" id="fanSliderLinks" min="0" max="100" value="50"
                     oninput="updateFanLabel('Links', this.value)"
                     onchange="sendFanSpeed('Links', this.value)">

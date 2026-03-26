@@ -285,7 +285,7 @@ async def handle_websocket():
                             elif cmd == "FAN_LINKS":
                                 fan1.set_speed(val_float / 100.0) #set speed verwacht waarde tussen 0-1, slider geeft 0-100
                                 if val_float > 0:
-                                    last_Speed_Fan_Links = val_float / 100.0
+                                    last_Speed_Fan_Links = val_float / 100.0 #onthoud laatste speed
                             elif cmd == "FAN_RECHTS":
                                 fan2.set_speed(val_float / 100.0)
                                 if val_float > 0:
