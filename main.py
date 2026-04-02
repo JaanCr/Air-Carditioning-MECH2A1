@@ -296,9 +296,21 @@ async def handle_websocket():
                     else:
                         # Toggles voor de Fans
                         if data == "FanOnOffLinks":
-                                fan1.set_speed(0.0 if fan1.speed > 0 else last_Speed_Fan_Links)
+                                print(f"Toggle Links! Current speed: {fan1.speed}, Memory: {last_Speed_Fan_Links}")
+                                if fan1.speed > 0:
+                                    fan1.set_speed(0.0)
+                                    print("Action: Turning OFF")
+                                else:
+                                    fan1.set_speed(last_Speed_Fan_Links)
+                                    print(f"Action: Turning ON to {last_Speed_Fan_Links}")
                         elif data == "FanOnOffRechts":
-                                fan2.set_speed(0.0 if fan2.speed > 0 else last_Speed_Fan_Rechts)
+                                print(f"Toggle Rechts! Current speed: {fan2.speed}, Memory: {last_Speed_Fan_Rechts}")
+                                if fan2.speed > 0:
+                                    fan2.set_speed(0.0)
+                                    print("Action: Turning OFF")
+                                else:
+                                    fan2.set_speed(last_Speed_Fan_Rechts)
+                                    print(f"Action: Turning ON to {last_Speed_Fan_Rechts}")
                         elif data == "TurnOnOff":
                             # Beide ventilatoren tesamen uit zetten
                             if (fan1.speed > 0 or fan2.speed > 0):
