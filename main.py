@@ -41,12 +41,9 @@ class Fan:
         self.pwm.duty_cycle = int(self.speed * 65535)
 
 class PeltierHBridge:
-    def __init__(self, pin_in1, pin_in2, pin_pwm, Kp=1.0, Ki=0.05, Kd=0.2):
-        self.in1 = DigitalInOut(pin_in1)
-        self.in1.direction = Direction.OUTPUT
-        self.in2 = DigitalInOut(pin_in2)
-        self.in2.direction = Direction.OUTPUT
-        self.pwm = pwmio.PWMOut(pin_pwm, frequency=20000, duty_cycle=0)
+    def __init__(self, pin_rpwm, pin_lpwm, Kp=1.0, Ki=0.05, Kd=0.2):
+        self.rpwm = pwmio.PWMOut(pin_rpwm, frequency=20000, duty_cycle=0)
+        self.lpwm = pwmio.PWMOut(pin_lpwm, frequency=20000, duty_cycle=0)
 
         self.Kp = Kp
         self.Ki = Ki
@@ -57,7 +54,8 @@ class PeltierHBridge:
         self.target = 20.0
         self.last_direction = 0
         self.last_switch_time = time.monotonic()
-        self.switch_delay = 10.0   
+        self.switch_delay = 4.0  
+        self.is_switching = False  
         self.last_update = time.monotonic()
 
     def reset_pid(self):
@@ -72,29 +70,36 @@ class PeltierHBridge:
         duty = int(power * 65535)
 
         if direction == 0:
-            self.in1.value = False
-            self.in2.value = False
-            self.pwm.duty_cycle = 0
-            self.last_direction = 0
-        elif direction == 1:  # koelen
-            self.in1.value = True
-            self.in2.value = False
-            self.pwm.duty_cycle = duty
+            self.rpwm.duty_cycle = 0
+            self.lpwm.duty_cycle = 0
+        elif direction == 1:   # koelen
+            self.rpwm.duty_cycle = duty
+            self.lpwm.duty_cycle = 0
         elif direction == -1:  # verwarmen
-            self.in1.value = False
-            self.in2.value = True
-            self.pwm.duty_cycle = duty
+            self.rpwm.duty_cycle = 0
+            self.lpwm.duty_cycle = duty
 
     def update(self, current_temp):
         if current_temp is None or current_temp < -20 or current_temp > 50:
             self.set_output(0, 0)
             return 0
-        
+
         now = time.monotonic()
         dt = now - self.last_update
         self.last_update = now
-       
+
         if dt <= 0: return 0
+
+        # Ompolingsveiligheid, bij een nodige verandering van richtin, eerst een korte pauze inlassen
+        if self.is_switching:
+            self.set_output(0, 0)
+            if now - self.last_switch_time >= self.switch_delay:
+                # Pause is over, resume PID from clean state
+                self.is_switching = False
+                self.reset_pid()
+                print("Peltier herstart na polariteitswissel.")
+            else:
+                return 0 
 
         error = self.target - current_temp
         if abs(error) < 0.1: error = 0
@@ -104,28 +109,27 @@ class PeltierHBridge:
 
         output = self.Kp * error + self.Ki * self.integral + self.Kd * derivative
         self.last_error = error
-        
+
         if abs(output) < 0.05:
             self.set_output(0, 0)
             return 0
 
         desired_direction = 1 if output > 0 else -1
 
-        if (desired_direction != self.last_direction and now - self.last_switch_time < self.switch_delay):
+        # Polarity change detected — start the safety pause
+        if desired_direction != self.last_direction and self.last_direction != 0:
+            print(f"Polariteitswissel gedetecteerd! {self.last_direction} -> {desired_direction}. Pauze van {self.switch_delay}s.")
             self.set_output(0, 0)
+            self.last_switch_time = now
+            self.is_switching = True
+            self.last_direction = 0
             return 0
-        
+
         if output > 0:
-            if self.last_direction != 1:
-                self.last_switch_time = now
-                self.last_direction = 1
-                self.reset_pid()
+            self.last_direction = 1
             self.set_output(1, min(1, output))
         else:
-            if self.last_direction != -1:
-                self.last_switch_time = now
-                self.last_direction = -1
-                self.reset_pid()
+            self.last_direction = -1
             self.set_output(-1, min(1, -output))
 
         return output
@@ -141,7 +145,14 @@ sensor_data = {
     "temperatureLinks": "--",
     "temperatureRechts": "--",
     "temperatureBuiten": "--",
-    "temperatureGem": "--"
+    "temperatureGem": "--",
+    "statusLinksBoven": False,
+    "statusLinksOnder": False,
+    "statusRechtsBoven": False,
+    "statusRechtsOnder": False,
+    "statusBuiten": False,
+    "fanStatusLinks": False,
+    "fanStatusRechts": False
 }
 
 # Ruwe float data voor de PID-regelaar
@@ -155,8 +166,8 @@ fan2 = Fan(board.GP17) # Rechts
 
 # Peltiers (Aanname: Peltier 0 = Links, Peltier 1 = Rechts)
 peltiers = [
-    PeltierHBridge(board.GP10, board.GP11, board.GP12), # Links
-    PeltierHBridge(board.GP13, board.GP14, board.GP15)  # Rechts
+    PeltierHBridge(board.GP10, board.GP11),  # Links:  RPWM=GP10, LPWM=GP11
+    PeltierHBridge(board.GP13, board.GP14)   # Rechts: RPWM=GP13, LPWM=GP14
 ]
 
 def initialiseer_sensoren():
@@ -180,12 +191,20 @@ async def lees_sensoren_taak():
         som_binnen = 0.0
         aantal_binnen = 0
 
+        for key in ["statusLinksBoven", "statusLinksOnder", "statusRechtsBoven", "statusRechtsOnder", "statusBuiten"]:
+            sensor_data[key] = False
+
         temps = {"LinksBoven": None, "LinksOnder": None, "RechtsBoven": None, "RechtsOnder": None}
 
         for s in mijn_sensoren:
             naam = s["naam"]
             try:
                 temp = s["object"].temperature
+
+                status_key = "status" + naam
+                if status_key in sensor_data:
+                    sensor_data[status_key] = True
+                
                 if naam in temps:
                     temps[naam] = temp
                 elif naam == "Buiten":
@@ -225,7 +244,7 @@ async def lees_sensoren_taak():
 
         await asyncio.sleep(2)
 
- 
+
 async def regel_hardware_taak():   #regeling van de teperatuur obv gemeten temp en huidige temp
     while True:
         if ruwe_temps["Links"] is not None:
@@ -283,7 +302,8 @@ async def handle_websocket():
                             fan1.set_speed(nieuwe_snelheid)
                             fan2.set_speed(nieuwe_snelheid)
                         
-
+                sensor_data["fanStatusLinks"] = fan1.speed > 0
+                sensor_data["fanStatusRechts"] = fan2.speed > 0
                 
                 # Huidige temperaturen verzenden als JSON naar websocket
                 json_string = json.dumps(sensor_data)

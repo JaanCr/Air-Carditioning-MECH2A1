@@ -10,11 +10,33 @@
 
 <body onload="connect_socket()">
 
-    <header>
-        <h1>Air Carditioning</h1>
-        <button id="theme-btn" onclick="toggleDarkMode()">🌙 Toggle Mode</button>
-        <p id="status" class="disconnected">Status: Disconnected</p>
+    <header class="grid">
+        <div class="kolom"></div>
+        <div class="kolom"> 
+            <h1>Air Carditioning</h1>
+        </div>
+        <div class="kolom">
+            <section class="titeldeel"> 
+                <button id="theme-btn" onclick="toggleDarkMode()">🌙 Toggle Mode</button>
+            </section>
+        </div>
     </header>
+
+
+    <main class="gridstatus">
+        <div class="kolom">
+            <div class="status-item">LinksBoven: <span id="statusLinksBoven" class="status-dot offline"></span></div>
+            <div class="status-item">LinksOnder: <span id="statusLinksOnder" class="status-dot offline"></span></div>
+            <div class="status-item">RechtsBoven: <span id="statusRechtsBoven" class="status-dot offline"></span></div>
+            <div class="status-item">RechtsOnder: <span id="statusRechtsOnder" class="status-dot offline"></span></div>
+            <div class="status-item">Buiten: <span id="statusBuiten" class="status-dot offline"></span></div>
+        </div>
+        <div class="kolom">
+            <p id="status" class="disconnected">Status: Disconnected</p>
+        </div>
+        <div class="kolom"></div>
+    </main>
+
 
     <main class="grid">
         <div class="kolom">
