@@ -164,6 +164,9 @@ websocket = None
 fan1 = Fan(board.GP16) # Links
 fan2 = Fan(board.GP17) # Rechts
 
+last_Speed_Fan_Links = 0.5   # Start op 50%
+last_Speed_Fan_Rechts = 0.5  # Start op 50%
+
 # Peltiers (Aanname: Peltier 0 = Links, Peltier 1 = Rechts)
 peltiers = [
     PeltierHBridge(board.GP10, board.GP11),  # Links:  RPWM=GP10, LPWM=GP11
@@ -191,20 +194,12 @@ async def lees_sensoren_taak():
         som_binnen = 0.0
         aantal_binnen = 0
 
-        for key in ["statusLinksBoven", "statusLinksOnder", "statusRechtsBoven", "statusRechtsOnder", "statusBuiten"]:
-            sensor_data[key] = False
-
         temps = {"LinksBoven": None, "LinksOnder": None, "RechtsBoven": None, "RechtsOnder": None}
 
         for s in mijn_sensoren:
             naam = s["naam"]
             try:
                 temp = s["object"].temperature
-
-                status_key = "status" + naam
-                if status_key in sensor_data:
-                    sensor_data[status_key] = True
-                
                 if naam in temps:
                     temps[naam] = temp
                 elif naam == "Buiten":
@@ -261,7 +256,7 @@ async def poll_server():
         await asyncio.sleep(0.05)
 
 async def handle_websocket():
-    global websocket
+    global websocket, last_Speed_Fan_Rechts, last_Speed_Fan_Links
     while True:
         if websocket is not None:
             try:
@@ -283,27 +278,40 @@ async def handle_websocket():
                             # Fans regelen op basis van slider input    
                             elif cmd == "FAN_LINKS":
                                 fan1.set_speed(val_float / 100.0) #set speed verwacht waarde tussen 0-1, slider geeft 0-100
+                                if val_float > 0:
+                                    last_Speed_Fan_Links = val_float / 100.0 #onthoud laatste speed
                             elif cmd == "FAN_RECHTS":
                                 fan2.set_speed(val_float / 100.0)
+                                if val_float > 0:
+                                    last_Speed_Fan_Rechts = val_float / 100.0
     
                         except ValueError:
                             pass
                     else:
                         # Toggles voor de Fans
                         if data == "FanOnOffLinks":
-                            nieuwe_snelheid = 0.0 if fan1.speed > 0 else 1.0
-                            fan1.set_speed(nieuwe_snelheid)
+                                print(f"Toggle Links! Current speed: {fan1.speed}, Memory: {last_Speed_Fan_Links}")
+                                if fan1.speed > 0:
+                                    fan1.set_speed(0.0)
+                                    print("Action: Turning OFF")
+                                else:
+                                    fan1.set_speed(last_Speed_Fan_Links)
+                                    print(f"Action: Turning ON to {last_Speed_Fan_Links}")
                         elif data == "FanOnOffRechts":
-                            nieuwe_snelheid = 0.0 if fan2.speed > 0 else 1.0
-                            fan2.set_speed(nieuwe_snelheid)
+                                print(f"Toggle Rechts! Current speed: {fan2.speed}, Memory: {last_Speed_Fan_Rechts}")
+                                if fan2.speed > 0:
+                                    fan2.set_speed(0.0)
+                                    print("Action: Turning OFF")
+                                else:
+                                    fan2.set_speed(last_Speed_Fan_Rechts)
+                                    print(f"Action: Turning ON to {last_Speed_Fan_Rechts}")
                         elif data == "TurnOnOff":
                             # Beide ventilatoren tesamen uit zetten
                             nieuwe_snelheid = 0.0 if (fan1.speed > 0 or fan2.speed > 0) else 1.0
                             fan1.set_speed(nieuwe_snelheid)
                             fan2.set_speed(nieuwe_snelheid)
                         
-                sensor_data["fanStatusLinks"] = fan1.speed > 0
-                sensor_data["fanStatusRechts"] = fan2.speed > 0
+
                 
                 # Huidige temperaturen verzenden als JSON naar websocket
                 json_string = json.dumps(sensor_data)

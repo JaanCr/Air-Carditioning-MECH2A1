@@ -47,7 +47,6 @@ header {
     gap: 25px;
     margin: 15px;
     text-align: center;
-
 }
 
 .kolom {
@@ -134,15 +133,28 @@ button {
 }
 
 button:hover {
-    background-color: #1e8bd3;
+    background-color: #1e8bd3 !important;
     transform: scale(1.025);
 }
 
 button:active {
-    background-color: #004f83;
+    background-color: #004f83 !important;
     transform: scale(1);
 }
 
+button.active-fan {
+    color: white;
+    background-color: #2ecc71 !important;
+    box-shadow: 0 0 10px rgba(46, 204, 113, 0.5);
+    transition: 0.25s;
+}
+
+button.active-fan:hover {
+    background-color: #27ae60 !important;
+}
+
+
+ 
 input[type="number"] {
     width: 80px;
     padding: 10px;

@@ -48,6 +48,13 @@ function connect_socket() {
         if (data.statusRechtsOnder !== undefined) 
             updateDot("statusRechtsOnder", data.statusRechtsOnder);
 
+        if (data.fanStatusLinks !== undefined)
+            updateFanButton("fanBtnLinks", data.fanStatusLinks);
+        if (data.fanStatusRechts !== undefined)
+            updateFanButton("fanBtnRechts", data.fanStatusRechts);
+
+        
+
         document.getElementById("tempLinks").textContent = data.temperatureLinks;
         document.getElementById("tempRechts").textContent = data.temperatureRechts;
         document.getElementById("tempBuiten").textContent = data.temperatureBuiten;
@@ -107,6 +114,19 @@ function updateThemeButton() {
     const isDark = document.body.classList.contains("dark-mode");
     btn.textContent = isDark ? "☀️ Light Mode" : "🌙 Dark Mode";
 }
+
+const updateFanButton = (btnId, isRunning) => {
+    const btn = document.getElementById(btnId);
+    if (!btn) return; // Safety check
+
+    if (isRunning) {
+        btn.classList.add("active-fan");
+        btn.textContent = "Toggle Fan (ON)"; 
+    } else {
+        btn.classList.remove("active-fan");
+        btn.textContent = "Toggle Fan (OFF)";
+    }
+};
 
 function updateFanLabel(kant, waarde) {
     document.getElementById("fanVal" + kant).textContent = waarde;
