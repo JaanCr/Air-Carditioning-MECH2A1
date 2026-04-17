@@ -49,6 +49,7 @@ class PeltierHBridge:
         self.Ki = Ki
         self.Kd = Kd
 
+        self.enabled = True # System starts as ON
         self.integral = 0
         self.last_error = 0
         self.target = 20.0
@@ -80,7 +81,7 @@ class PeltierHBridge:
             self.lpwm.duty_cycle = duty
 
     def update(self, current_temp):
-        if current_temp is None or current_temp < -20 or current_temp > 50:
+        if current_temp is None or current_temp < -20 or current_temp > 50 or not self.enabled:
             self.set_output(0, 0)
             return 0
 
@@ -152,7 +153,9 @@ sensor_data = {
     "statusRechtsOnder": False,
     "statusBuiten": False,
     "fanStatusLinks": False,
-    "fanStatusRechts": False
+    "fanStatusRechts": False,
+    "peltierEnabledLinks": True,
+    "peltierEnabledRechts": True
 }
 
 # Ruwe float data voor de PID-regelaar
@@ -194,12 +197,20 @@ async def lees_sensoren_taak():
         som_binnen = 0.0
         aantal_binnen = 0
 
+        for key in ["statusLinksBoven", "statusLinksOnder", "statusRechtsBoven", "statusRechtsOnder", "statusBuiten"]:
+                sensor_data[key] = False
+
         temps = {"LinksBoven": None, "LinksOnder": None, "RechtsBoven": None, "RechtsOnder": None}
 
         for s in mijn_sensoren:
             naam = s["naam"]
             try:
                 temp = s["object"].temperature
+
+                status_key = "status" + naam
+                if status_key in sensor_data:
+                    sensor_data[status_key] = True
+                    
                 if naam in temps:
                     temps[naam] = temp
                 elif naam == "Buiten":
@@ -268,12 +279,21 @@ async def handle_websocket():
                         cmd, val = data.split("=")
                         try:
                             val_float = float(val)
+                            # Temp van inputvelden 
                             if cmd == "TEMP_LINKS":
+                                peltiers[0].enabled = True
                                 peltiers[0].set_target(val_float)
                                 print(f"Doel Links -> {val_float}")
-                            elif cmd == "TEMP_RECHTS":
+                            elif cmd == "TEMP_RECHTS":   
+                                peltiers[1].enabled = True                             
                                 peltiers[1].set_target(val_float)
                                 print(f"Doel Rechts -> {val_float}")
+                            elif cmd == "TEMP_GEM":
+                                peltiers[0].enabled = True
+                                peltiers[1].enabled = True
+                                peltiers[0].set_target(val_float)
+                                peltiers[1].set_target(val_float)
+                                print(f"Doel Rechts en Links -> {val_float}")
 
                             # Fans regelen op basis van slider input    
                             elif cmd == "FAN_LINKS":
@@ -297,6 +317,7 @@ async def handle_websocket():
                                 else:
                                     fan1.set_speed(last_Speed_Fan_Links)
                                     print(f"Action: Turning ON to {last_Speed_Fan_Links}")
+
                         elif data == "FanOnOffRechts":
                                 print(f"Toggle Rechts! Current speed: {fan2.speed}, Memory: {last_Speed_Fan_Rechts}")
                                 if fan2.speed > 0:
@@ -305,13 +326,36 @@ async def handle_websocket():
                                 else:
                                     fan2.set_speed(last_Speed_Fan_Rechts)
                                     print(f"Action: Turning ON to {last_Speed_Fan_Rechts}")
+                        
+                        # on off misschien overbodig met stopall knop
                         elif data == "TurnOnOff":
                             # Beide ventilatoren tesamen uit zetten
                             nieuwe_snelheid = 0.0 if (fan1.speed > 0 or fan2.speed > 0) else 1.0
                             fan1.set_speed(nieuwe_snelheid)
                             fan2.set_speed(nieuwe_snelheid)
-                        
 
+                        # StopAll button 
+                        elif data == "STOP_ALL":
+                            print("!!! SYSTEM STOP !!!")
+                            # Zet Fans uit
+                            fan1.set_speed(0.0)
+                            fan2.set_speed(0.0)
+                            # Zet Peltiers uit
+                            peltiers[0].set_output(0, 0)
+                            peltiers[0].enabled = False
+                            peltiers[1].set_output(0, 0)
+                            peltiers[1].enabled = False
+                            # Reset de PID-intergrator om "wind-up" te voorkomen bij herstart
+                            peltiers[0].reset_pid()
+                            peltiers[1].reset_pid()
+
+                            peltiers[0].set_target(20.0)
+                            peltiers[1].set_target(20.0)
+                        
+                sensor_data["fanStatusLinks"] = fan1.speed > 0
+                sensor_data["fanStatusRechts"] = fan2.speed > 0
+                sensor_data["peltierEnabledLinks"] = peltiers[0].enabled
+                sensor_data["peltierEnabledRechts"] = peltiers[1].enabled
                 
                 # Huidige temperaturen verzenden als JSON naar websocket
                 json_string = json.dumps(sensor_data)

@@ -31,16 +31,7 @@ header {
 }
 
 /* style cards*/
-.grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    width: 95%;
-    gap: 25px;
-    margin: 15px;
-    text-align: center;
-}
-
-.gridstatus {
+.grid, .gridstatus {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
     width: 95%;
@@ -153,13 +144,37 @@ button.active-fan:hover {
     background-color: #27ae60 !important;
 }
 
+#stopAllBtn {
+    background-color: #e74c3c !important;
+    color: white;
+    border: none;
+    padding: 15px 30px;
+    font-size: 1.2rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: transform 0.1s, background-color 0.3s;
+    width: 100%; 
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+    margin-top: 10px;
+}
+
+#stopAllBtn:hover {
+    background-color: #b71c1c !important;
+    transform: scale(1.025);
+}
+
+#stopAllBtn:active {
+    transform: scale(1);
+}
 
  
 input[type="number"] {
     width: 80px;
     padding: 10px;
     border-radius: 5px;
-    border: 1px solid var(--text-color);
+    border: 2px solid var(--text-color);
     background-color: var(--card-bg);
     color: var(--text-color);
     font-size: 1.1rem;
@@ -167,6 +182,15 @@ input[type="number"] {
     margin-bottom: 10px;
 }
 
+.input-enabled {
+    border: 2px solid #2ecc71 !important;
+    transition: 0.3s;
+}
+
+.input-disabled {
+    border: 2px solid var(--text-color) !important;
+    transition: 0.3s;
+}
 
 input::-webkit-outer-spin-button,
 input::-webkit-inner-spin-button {

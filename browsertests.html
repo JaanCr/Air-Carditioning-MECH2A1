@@ -22,6 +22,29 @@
         </div>
     </header>
 
+    <main class="gridstatus">
+        <div class="kolom">
+            <section class="card">
+                <h2>Status Sensoren</h2>
+                <div class="status-item">LinksBoven: <span id="statusLinksBoven" class="status-dot offline"></span></div>
+                <div class="status-item">LinksOnder: <span id="statusLinksOnder" class="status-dot offline"></span></div>
+                <div class="status-item">RechtsBoven: <span id="statusRechtsBoven" class="status-dot offline"></span></div>
+                <div class="status-item">RechtsOnder: <span id="statusRechtsOnder" class="status-dot offline"></span></div>
+                <div class="status-item">Buiten: <span id="statusBuiten" class="status-dot offline"></span></div>
+            </section>
+        </div>
+        <div class="kolom">
+            <p id="status" class="disconnected">Status: Disconnected</p>
+        </div>
+        <div class="kolom">
+            <section class="card">
+                <h2>System STOP</h2>
+                <button id="stopAllBtn" onclick="handleMasterStop()">STOP</button>
+            </section>
+        </div>
+    </main>
+
+
     <main class="grid">
         <div class="kolom">
             <section class="card">
@@ -31,7 +54,7 @@
             <section class="card">
                 <h2>Controls Links</h2>
                 <h3>Temperatuurregeling Links</h3>
-                <input type="number" id="inputTempLinks" value="20">
+                <input type="number" id="inputTempLinks" class="input-enabled" value="20">
                 <button onclick="setTargetTemp('Links')">Instellen</button>
                 <p>Doel: <span id="doelLinks">20</span>°C</p>
                 <h3>Fan Links</h3>
@@ -54,7 +77,7 @@
                 <h2>Controls Gemiddelde Temperatuur</h2>
                 <h3>Temperatuurregeling Algemeen</h3>
                 <input type="number" id="inputTempGem" value="20">
-                <button onclick="setTargetTemp('Gem')">Instellen</button>
+                <button onclick="setGlobalTargetTemp()">Instellen</button>
                 <p>Doel: <span id="doelGem">20</span>°C</p>
                 <h3>Fans Aan/Uit</h3>
                 <button onclick="sendCommand('TurnOnOff')">Aan/Uit</button>
@@ -69,7 +92,7 @@
             <section class="card">
                 <h2>Controls Rechts</h2>
                 <h3>Temperatuurregeling Rechts</h3>
-                <input type="number" id="inputTempRechts" value="20">
+                <input type="number" id="inputTempRechts" class="input-enabled" value="20">
                 <button onclick="setTargetTemp('Rechts')">Instellen</button>
                 <p>Doel: <span id="doelRechts">20</span>°C</p>
                 <h3>Fan Rechts</h3>
