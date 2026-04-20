@@ -59,6 +59,18 @@ header {
     text-align: right;
 }
 
+/* --- MOBILE OVERRIDES (for small screens) --- */
+@media (max-width: 775px) {
+    .grid, .gridstatus {
+        grid-template-columns: 1fr;
+        gap: 15px;
+    }
+
+    .kolom {
+        width: 100%;
+    }
+}
+
 /* status text */
 #status {
     max-width: 250px;
