@@ -161,7 +161,7 @@ sensor_data = {
 # Ruwe float data voor de PID-regelaar
 ruwe_temps = {"Links": None, "Rechts": None}
 
-websocket = None
+websockets = []
 
 # Fans definiëren
 fan1 = Fan(board.GP16) # Links
@@ -267,11 +267,11 @@ async def poll_server():
         await asyncio.sleep(0.05)
 
 async def handle_websocket():
-    global websocket, last_Speed_Fan_Rechts, last_Speed_Fan_Links
+    global websockets, last_Speed_Fan_Rechts, last_Speed_Fan_Links
     while True:
-        if websocket is not None:
+        for ws in websockets[:]:
             try:
-                data = websocket.receive(fail_silently=True)
+                data = ws.receive(fail_silently=True)
                 if data:
                     print(f"Websocket Inkomend: {data}")
                     
@@ -359,11 +359,11 @@ async def handle_websocket():
                 
                 # Huidige temperaturen verzenden als JSON naar websocket
                 json_string = json.dumps(sensor_data)
-                websocket.send_message(json_string, fail_silently=True)
+                ws.send_message(json_string, fail_silently=True)
                 
             except Exception as e:
                 print("WebSocket fout:", e)
-                websocket = None 
+                websockets.remove(ws)
         await asyncio.sleep(0.5)
 
 # =========================================================
@@ -394,12 +394,11 @@ def serve_js(request: Request):
 # JavaScript gebruiken voor de connectie
 @server.route("/connect-websocket", GET)
 def connect_websocket(request: Request):
-    global websocket
-    if websocket is not None: 
-        websocket.close()
-    websocket = Websocket(request)
-    print("Websocket verbonden!")
-    return websocket
+    global websockets
+    ws = Websocket(request)
+    websockets.append(ws)
+    print(f"Websocket verbonden! Totaal verbonden gebruikers: {len(websockets)}" )
+    return ws
 
 # =========================================================
 # MAIN RUNNER
