@@ -1,20 +1,27 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Air Carditioning</title>
     <link rel="stylesheet" href="style-webpage.css">
 </head>
-
 <body onload="connect_socket()">
+
+    <div id="waiting-room" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 9999; color: white; flex-direction: column; justify-content: center; align-items: center; text-align: center;">
+        <div style="background: #2c3e50; padding: 40px; border-radius: 20px; box-shadow: 0 0 30px rgba(0,0,0,0.5); max-width: 80%;">
+            <h1 style="margin-bottom: 20px;">Even Geduld...</h1>
+        
+            <p id="queue-status-text" style="font-size: 1.4rem; font-weight: bold; line-height: 1.5;"></p>
+        
+            <p style="margin-top: 20px; color: #bdc3c7;">U ziet de live status, maar de controls zijn vergrendeld.</p>
+            <div class="spinner" style="border: 4px solid rgba(255,255,255,0.3); border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 20px auto;"></div>
+        </div>
+    </div>
 
     <header class="grid">
         <div class="kolom"></div>
-        <div class="kolom"> 
-            <h1>Air Carditioning</h1>
-        </div>
+        <div class="kolom"><h1>Air Carditioning</h1></div>
         <div class="kolom">
             <section class="titeldeel"> 
                 <button id="theme-btn" onclick="toggleDarkMode()">🌙 Toggle Mode</button>
@@ -44,7 +51,6 @@
         </div>
     </main>
 
-
     <main class="grid">
         <div class="kolom">
             <section class="card">
@@ -58,7 +64,6 @@
                 <button onclick="setTargetTemp('Links')">Instellen</button>
                 <p>Doel: <span id="doelLinks">20</span>°C</p>
                 <h3>Fan Links</h3>
-                <!-- FIX: was 'FanOnOffRechts' -->
                 <button id="fanBtnLinks" onclick="sendCommand('FanOnOffLinks')">Toggle Fan (OFF)</button>
                 <input type="range" id="fanSliderLinks" min="0" max="100" value="50"
                     oninput="updateFanLabel('Links', this.value)"
@@ -107,5 +112,8 @@
 
     <script src="webpage.js"></script>
 
+    <style>
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
 </body>
 </html>

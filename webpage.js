@@ -20,68 +20,68 @@ function connect_socket() {
         o.textContent = "Status: Disconnected";
         o.className = "disconnected";
         socket = undefined;
-        setTimeout(() => {
-            connect_socket(); 
-        }, 2500);
+        setTimeout(() => { connect_socket(); }, 2500);
     });
     
     socket.addEventListener("message", (event) => {
         const data = JSON.parse(event.data); 
         
+        const overlay = document.getElementById("waiting-room");
+        const queueMessage = document.getElementById("queue-status-text");
+
+        if (data.queue_pos === 0) {
+            overlay.style.display = "none";
+        } else {
+            overlay.style.display = "flex";
+            let x = data.queue_pos;
+            if (x === 1) {
+                queueMessage.innerHTML = "Een andere persoon heeft de controle op dit moment, u staat <strong>1ste</strong> in de wachtrij.";
+            } else {
+                queueMessage.innerHTML = "Een andere persoon heeft de controle op dit moment, u staat <strong>" + x + "de</strong> in de wachtrij."
+            }
+            
+        }
+        
         const updateDot = (id, isOnline) => {
             const statusSens = document.getElementById(id);
+            if (!statusSens) return;
             if (isOnline) {
                 statusSens.classList.add("online");
                 statusSens.classList.remove("offline");
-            } 
-            else {
+            } else {
                 statusSens.classList.add("offline");
                 statusSens.classList.remove("online");
             }
         };
 
-        // Kader Links Input
+        // UI Updates
         let inputL = document.getElementById('inputTempLinks');
         if (data.peltierEnabledLinks) {
-            inputL.classList.add('input-enabled');
-            inputL.classList.remove('input-disabled');
+            inputL.classList.add('input-enabled'); inputL.classList.remove('input-disabled');
         } else {
-            inputL.classList.add('input-disabled');
-            inputL.classList.remove('input-enabled');
+            inputL.classList.add('input-disabled'); inputL.classList.remove('input-enabled');
         }
 
-        // Kader Rechts Input
         let inputR = document.getElementById('inputTempRechts');
         if (data.peltierEnabledRechts) {
-            inputR.classList.add('input-enabled');
-            inputR.classList.remove('input-disabled');
+            inputR.classList.add('input-enabled'); inputR.classList.remove('input-disabled');
         } else {
-            inputR.classList.add('input-disabled');
-            inputR.classList.remove('input-enabled');
+            inputR.classList.add('input-disabled'); inputR.classList.remove('input-enabled');
         }
 
-        if (data.statusLinksBoven !== undefined) 
-            updateDot("statusLinksBoven", data.statusLinksBoven);
-        if (data.statusRechtsBoven !== undefined) 
-            updateDot("statusRechtsBoven", data.statusRechtsBoven);
-        if (data.statusBuiten !== undefined) 
-            updateDot("statusBuiten", data.statusBuiten);
-        if (data.statusLinksOnder !== undefined) 
-            updateDot("statusLinksOnder", data.statusLinksOnder);
-        if (data.statusRechtsOnder !== undefined) 
-            updateDot("statusRechtsOnder", data.statusRechtsOnder);
+        updateDot("statusLinksBoven", data.statusLinksBoven);
+        updateDot("statusRechtsBoven", data.statusRechtsBoven);
+        updateDot("statusBuiten", data.statusBuiten);
+        updateDot("statusLinksOnder", data.statusLinksOnder);
+        updateDot("statusRechtsOnder", data.statusRechtsOnder);
 
-        if (data.fanStatusLinks !== undefined)
-            updateFanButton("fanBtnLinks", data.fanStatusLinks);
-        if (data.fanStatusRechts !== undefined)
-            updateFanButton("fanBtnRechts", data.fanStatusRechts);
+        if (data.fanStatusLinks !== undefined) updateFanButton("fanBtnLinks", data.fanStatusLinks);
+        if (data.fanStatusRechts !== undefined) updateFanButton("fanBtnRechts", data.fanStatusRechts);
 
         document.getElementById("tempLinks").textContent = data.temperatureLinks;
         document.getElementById("tempRechts").textContent = data.temperatureRechts;
         document.getElementById("tempBuiten").textContent = data.temperatureBuiten;
         document.getElementById("tempGem").textContent = data.temperatureGem;
-        
-
     });
 
     socket.addEventListener("error", (event) => {
@@ -90,86 +90,50 @@ function connect_socket() {
     });
 }
 
-function disconnect_socket() {
-    if (socket != undefined) {
-        socket.close();
-        socket = undefined;
-    }
-}
+
+function disconnect_socket() { if (socket != undefined) { socket.close(); socket = undefined; } }
 
 function sendCommand(command) {
-    if(socket != undefined && socket.readyState === WebSocket.OPEN) {
-        socket.send(command);
-    } 
-    else {
-        alert("Disconnected");
-    }
+    if(socket != undefined && socket.readyState === WebSocket.OPEN) { socket.send(command); } 
+    else { alert("Disconnected"); }
 }
 
-// Systeemstop button functies
 function handleMasterStop() {
     if(socket != undefined && socket.readyState === WebSocket.OPEN) {
-        sendCommand('STOP_ALL');   
-        resetAll();         
-        alert("Systeem is gestopt!");
-    } 
-    else {
-        alert("Disconnected");
-    } 
+        sendCommand('STOP_ALL'); resetAll(); alert("Systeem is gestopt!");
+    } else { alert("Disconnected"); } 
 }
 
 function resetAll() {
-    // Update tekst doeltemp en waarde in inputvelden naar 20°C
-    const resetwaarde = "20";
-    document.getElementById("doelGem").textContent = resetwaarde;
-    document.getElementById("doelLinks").textContent = resetwaarde;
-    document.getElementById("doelRechts").textContent = resetwaarde;
-
-    document.getElementById("inputTempLinks").value = resetwaarde;
-    document.getElementById("inputTempRechts").value = resetwaarde;
-    document.getElementById("inputTempGem").value = resetwaarde;
-
-    // Update sliders naar 50%
+    const rw = "20";
+    document.getElementById("doelGem").textContent = rw;
+    document.getElementById("doelLinks").textContent = rw;
+    document.getElementById("doelRechts").textContent = rw;
+    document.getElementById("inputTempLinks").value = rw;
+    document.getElementById("inputTempRechts").value = rw;
+    document.getElementById("inputTempGem").value = rw;
     document.getElementById("fanSliderLinks").value = 50; 
     document.getElementById("fanSliderRechts").value = 50;
     document.getElementById("fanValLinks").textContent = "50";
     document.getElementById("fanValRechts").textContent = "50";
 }
 
-// Nieuwe functie voor het instellen van de doeltemperatuur via de input velden
 function setTargetTemp(kant) {
     if(socket != undefined && socket.readyState === WebSocket.OPEN) {
-        let inputElement = document.getElementById("inputTemp" + kant);
-        let waarde = inputElement.value;
-        
-        // Stuur commando, bijvoorbeeld "TEMP_LINKS=21.5"
-        let commando = "TEMP_" + kant.toUpperCase() + "=" + waarde;
-        socket.send(commando);
-
-        // Update de tekst in de UI
-        document.getElementById("doel" + kant).textContent = waarde;
-    } 
-    else {
-        alert("Disconnected");
-    }
+        let val = document.getElementById("inputTemp" + kant).value;
+        socket.send("TEMP_" + kant.toUpperCase() + "=" + val);
+        document.getElementById("doel" + kant).textContent = val;
+    } else { alert("Disconnected"); }
 }
 
 function setGlobalTargetTemp() {
     if(socket != undefined && socket.readyState === WebSocket.OPEN) {
-        let inputElement = document.getElementById("inputTempGem");
-        let waarde = inputElement.value;
-        
-        let commando = "TEMP_GEM" + "=" + waarde;
-        socket.send(commando);
-
-        // Update de tekst in de UI voor allemaal
-        document.getElementById("doelGem").textContent = waarde;
-        document.getElementById("doelLinks").textContent = waarde;
-        document.getElementById("doelRechts").textContent = waarde;
-    } 
-    else {
-        alert("Disconnected");
-    }
+        let val = document.getElementById("inputTempGem").value;
+        socket.send("TEMP_GEM=" + val);
+        document.getElementById("doelGem").textContent = val;
+        document.getElementById("doelLinks").textContent = val;
+        document.getElementById("doelRechts").textContent = val;
+    } else { alert("Disconnected"); }
 }
 
 function toggleDarkMode() {
@@ -181,38 +145,22 @@ function toggleDarkMode() {
 
 function updateThemeButton() {
     const btn = document.getElementById("theme-btn");
-    if (!btn) return; // safety check
+    if (!btn) return;
     const isDark = document.body.classList.contains("dark-mode");
     btn.textContent = isDark ? "☀️ Light Mode" : "🌙 Dark Mode";
 }
 
 const updateFanButton = (btnId, isRunning) => {
     const btn = document.getElementById(btnId);
-    if (!btn) return; // Safety check
-
-    if (isRunning) {
-        btn.classList.add("active-fan");
-        btn.textContent = "Toggle Fan (ON)"; 
-    } 
-    else {
-        btn.classList.remove("active-fan");
-        btn.textContent = "Toggle Fan (OFF)";
-    }
+    if (!btn) return;
+    btn.classList.toggle("active-fan", isRunning);
+    btn.textContent = isRunning ? "Toggle Fan (ON)" : "Toggle Fan (OFF)";
 };
 
-function updateFanLabel(kant, waarde) {
-    document.getElementById("fanVal" + kant).textContent = waarde;
-}
+function updateFanLabel(kant, waarde) { document.getElementById("fanVal" + kant).textContent = waarde; }
 
-// Sends the final value to the Pico
 function sendFanSpeed(kant, waarde) {
     if(socket != undefined && socket.readyState === WebSocket.OPEN) {
-        // Sends: "FAN_LINKS=75"
-        let commando = "FAN_" + kant.toUpperCase() + "=" + waarde;
-        socket.send(commando);
-        console.log("Sent fan speed:", commando);
-    } 
-    else {
-        alert("Disconnected");
-    }
+        socket.send("FAN_" + kant.toUpperCase() + "=" + waarde);
+    } else { alert("Disconnected"); }
 }

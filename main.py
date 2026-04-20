@@ -22,8 +22,7 @@ SENSOR_MAP = {
     "28E0DCBF00000043": "Buiten"
 }
 
-
-#passwoord en naam van het netwerk
+# passwoord en naam van het netwerk
 AP_SSID = "Air Carditioning"
 AP_PASSWORD = "2026MECH2A1"
 NUM_SENSORS = 5
@@ -91,11 +90,10 @@ class PeltierHBridge:
 
         if dt <= 0: return 0
 
-        # Ompolingsveiligheid, bij een nodige verandering van richtin, eerst een korte pauze inlassen
+        # Ompolingsveiligheid
         if self.is_switching:
             self.set_output(0, 0)
             if now - self.last_switch_time >= self.switch_delay:
-                # Pause is over, resume PID from clean state
                 self.is_switching = False
                 self.reset_pid()
                 print("Peltier herstart na polariteitswissel.")
@@ -117,9 +115,8 @@ class PeltierHBridge:
 
         desired_direction = 1 if output > 0 else -1
 
-        # Polarity change detected — start the safety pause
         if desired_direction != self.last_direction and self.last_direction != 0:
-            print(f"Polariteitswissel gedetecteerd! {self.last_direction} -> {desired_direction}. Pauze van {self.switch_delay}s.")
+            print(f"Polariteitswissel! Pauze van {self.switch_delay}s.")
             self.set_output(0, 0)
             self.last_switch_time = now
             self.is_switching = True
@@ -136,12 +133,11 @@ class PeltierHBridge:
         return output
 
 # =========================================================
-# GLOBALE VARIABELEN & INITIALISATIE HARDWARE
+# GLOBALE VARIABELEN & INITIALISATIE
 # =========================================================
 ow_bus = OneWireBus(board.GP22)
 mijn_sensoren = []
 
-# Variabelen voor de website (JSON payload)
 sensor_data = {
     "temperatureLinks": "--",
     "temperatureRechts": "--",
@@ -155,32 +151,28 @@ sensor_data = {
     "fanStatusLinks": False,
     "fanStatusRechts": False,
     "peltierEnabledLinks": True,
-    "peltierEnabledRechts": True
+    "peltierEnabledRechts": True,
+    "queue_pos": 0 
 }
 
-# Ruwe float data voor de PID-regelaar
 ruwe_temps = {"Links": None, "Rechts": None}
+all_clients = []
 
-websocket = None
-
-# Fans definiëren
 fan1 = Fan(board.GP16) # Links
 fan2 = Fan(board.GP17) # Rechts
 
-last_Speed_Fan_Links = 0.5   # Start op 50%
-last_Speed_Fan_Rechts = 0.5  # Start op 50%
+last_Speed_Fan_Links = 0.5   
+last_Speed_Fan_Rechts = 0.5  
 
-# Peltiers (Aanname: Peltier 0 = Links, Peltier 1 = Rechts)
 peltiers = [
-    PeltierHBridge(board.GP10, board.GP11),  # Links:  RPWM=GP10, LPWM=GP11
-    PeltierHBridge(board.GP13, board.GP14)   # Rechts: RPWM=GP13, LPWM=GP14
+    PeltierHBridge(board.GP10, board.GP11),  # Links
+    PeltierHBridge(board.GP13, board.GP14)   # Rechts
 ]
 
 def initialiseer_sensoren():
     gevonden_devices = ow_bus.scan()
     sensor_lijst = []
     print(f"Systeem heeft {len(gevonden_devices)} sensoren gevonden.")
-    
     for device in gevonden_devices:
         sensor_obj = adafruit_ds18x20.DS18X20(ow_bus, device)
         id_hex = "".join([f"{b:02X}" for b in device.rom])
@@ -206,18 +198,12 @@ async def lees_sensoren_taak():
             naam = s["naam"]
             try:
                 temp = s["object"].temperature
-
                 status_key = "status" + naam
-                if status_key in sensor_data:
-                    sensor_data[status_key] = True
-                    
-                if naam in temps:
-                    temps[naam] = temp
-                elif naam == "Buiten":
-                    sensor_data["temperatureBuiten"] = f"{temp:.1f}"
+                if status_key in sensor_data: sensor_data[status_key] = True
+                if naam in temps: temps[naam] = temp
+                elif naam == "Buiten": sensor_data["temperatureBuiten"] = f"{temp:.1f}"
             except Exception:
-                if naam == "Buiten":
-                    sensor_data["temperatureBuiten"] = "FOUT"
+                if naam == "Buiten": sensor_data["temperatureBuiten"] = "FOUT"
 
         # Gemiddelde Links
         links_waarden = [v for v in [temps["LinksBoven"], temps["LinksOnder"]] if v is not None]
@@ -250,15 +236,78 @@ async def lees_sensoren_taak():
 
         await asyncio.sleep(2)
 
-
-async def regel_hardware_taak():   #regeling van de teperatuur obv gemeten temp en huidige temp
+async def handle_websocket():
+    global all_clients
     while True:
-        if ruwe_temps["Links"] is not None:
-            peltiers[0].update(ruwe_temps["Links"])
+        still_connected = []
+
+        for index, ws in enumerate(all_clients):
+            try:
+                data = ws.receive(fail_silently=True)
+                if data and index == 0:
+                    process_incoming_command(data)
+
+                sensor_data["queue_pos"] = index 
+                ws.send_message(json.dumps(sensor_data))
+
+                sensor_data["fanStatusLinks"] = fan1.speed > 0
+                sensor_data["fanStatusRechts"] = fan2.speed > 0
+                sensor_data["peltierEnabledLinks"] = peltiers[0].enabled
+                sensor_data["peltierEnabledRechts"] = peltiers[1].enabled
+                sensor_data["queue_pos"] = index 
+                
+                ws.send_message(json.dumps(sensor_data))
+                
+                still_connected.append(ws)
+
+            except Exception:
+                print(f"Klant op positie {index} is verbroken.")
+                continue
         
-        if ruwe_temps["Rechts"] is not None:
-            peltiers[1].update(ruwe_temps["Rechts"])
-            
+        all_clients = still_connected
+        await asyncio.sleep(0.1)
+
+def process_incoming_command(data):
+    global last_Speed_Fan_Links, last_Speed_Fan_Rechts
+    if "=" in data:
+        cmd, val = data.split("=")
+        try:
+            val_float = float(val)
+            if cmd == "TEMP_LINKS":
+                peltiers[0].enabled = True
+                peltiers[0].set_target(val_float)
+            elif cmd == "TEMP_RECHTS":   
+                peltiers[1].enabled = True                             
+                peltiers[1].set_target(val_float)
+            elif cmd == "TEMP_GEM":
+                peltiers[0].enabled = peltiers[1].enabled = True
+                peltiers[0].set_target(val_float)
+                peltiers[1].set_target(val_float)
+            elif cmd == "FAN_LINKS":
+                fan1.set_speed(val_float / 100.0)
+                if val_float > 0: last_Speed_Fan_Links = val_float / 100.0
+            elif cmd == "FAN_RECHTS":
+                fan2.set_speed(val_float / 100.0)
+                if val_float > 0: last_Speed_Fan_Rechts = val_float / 100.0
+        except ValueError:
+            pass
+    else:
+        if data == "FanOnOffLinks":
+            fan1.set_speed(0.0 if fan1.speed > 0 else last_Speed_Fan_Links)
+        elif data == "FanOnOffRechts":
+            fan2.set_speed(0.0 if fan2.speed > 0 else last_Speed_Fan_Rechts)
+        elif data == "TurnOnOff":
+            ns = 0.0 if (fan1.speed > 0 or fan2.speed > 0) else 1.0
+            fan1.set_speed(ns); fan2.set_speed(ns)
+        elif data == "STOP_ALL":
+            fan1.set_speed(0); fan2.set_speed(0)
+            for p in peltiers:
+                p.set_output(0, 0); p.enabled = False; p.reset_pid(); p.set_target(20.0)
+
+async def regel_hardware_taak():
+    while True:
+        if ruwe_temps["Links"] is not None: peltiers[0].update(ruwe_temps["Links"])
+        if ruwe_temps["Rechts"] is not None: peltiers[1].update(ruwe_temps["Rechts"])
         await asyncio.sleep(1)
 
 async def poll_server():
@@ -266,156 +315,39 @@ async def poll_server():
         server.poll()
         await asyncio.sleep(0.05)
 
-async def handle_websocket():
-    global websocket, last_Speed_Fan_Rechts, last_Speed_Fan_Links
-    while True:
-        if websocket is not None:
-            try:
-                data = websocket.receive(fail_silently=True)
-                if data:
-                    print(f"Websocket Inkomend: {data}")
-                    
-                    if "=" in data:
-                        cmd, val = data.split("=")
-                        try:
-                            val_float = float(val)
-                            # Temp van inputvelden 
-                            if cmd == "TEMP_LINKS":
-                                peltiers[0].enabled = True
-                                peltiers[0].set_target(val_float)
-                                print(f"Doel Links -> {val_float}")
-                            elif cmd == "TEMP_RECHTS":   
-                                peltiers[1].enabled = True                             
-                                peltiers[1].set_target(val_float)
-                                print(f"Doel Rechts -> {val_float}")
-                            elif cmd == "TEMP_GEM":
-                                peltiers[0].enabled = True
-                                peltiers[1].enabled = True
-                                peltiers[0].set_target(val_float)
-                                peltiers[1].set_target(val_float)
-                                print(f"Doel Rechts en Links -> {val_float}")
-
-                            # Fans regelen op basis van slider input    
-                            elif cmd == "FAN_LINKS":
-                                fan1.set_speed(val_float / 100.0) #set speed verwacht waarde tussen 0-1, slider geeft 0-100
-                                if val_float > 0:
-                                    last_Speed_Fan_Links = val_float / 100.0 #onthoud laatste speed
-                            elif cmd == "FAN_RECHTS":
-                                fan2.set_speed(val_float / 100.0)
-                                if val_float > 0:
-                                    last_Speed_Fan_Rechts = val_float / 100.0
-    
-                        except ValueError:
-                            pass
-                    else:
-                        # Toggles voor de Fans
-                        if data == "FanOnOffLinks":
-                                print(f"Toggle Links! Current speed: {fan1.speed}, Memory: {last_Speed_Fan_Links}")
-                                if fan1.speed > 0:
-                                    fan1.set_speed(0.0)
-                                    print("Action: Turning OFF")
-                                else:
-                                    fan1.set_speed(last_Speed_Fan_Links)
-                                    print(f"Action: Turning ON to {last_Speed_Fan_Links}")
-
-                        elif data == "FanOnOffRechts":
-                                print(f"Toggle Rechts! Current speed: {fan2.speed}, Memory: {last_Speed_Fan_Rechts}")
-                                if fan2.speed > 0:
-                                    fan2.set_speed(0.0)
-                                    print("Action: Turning OFF")
-                                else:
-                                    fan2.set_speed(last_Speed_Fan_Rechts)
-                                    print(f"Action: Turning ON to {last_Speed_Fan_Rechts}")
-                        
-                        # on off misschien overbodig met stopall knop
-                        elif data == "TurnOnOff":
-                            # Beide ventilatoren tesamen uit zetten
-                            nieuwe_snelheid = 0.0 if (fan1.speed > 0 or fan2.speed > 0) else 1.0
-                            fan1.set_speed(nieuwe_snelheid)
-                            fan2.set_speed(nieuwe_snelheid)
-
-                        # StopAll button 
-                        elif data == "STOP_ALL":
-                            print("!!! SYSTEM STOP !!!")
-                            # Zet Fans uit
-                            fan1.set_speed(0.0)
-                            fan2.set_speed(0.0)
-                            # Zet Peltiers uit
-                            peltiers[0].set_output(0, 0)
-                            peltiers[0].enabled = False
-                            peltiers[1].set_output(0, 0)
-                            peltiers[1].enabled = False
-                            # Reset de PID-intergrator om "wind-up" te voorkomen bij herstart
-                            peltiers[0].reset_pid()
-                            peltiers[1].reset_pid()
-
-                            peltiers[0].set_target(20.0)
-                            peltiers[1].set_target(20.0)
-                        
-                sensor_data["fanStatusLinks"] = fan1.speed > 0
-                sensor_data["fanStatusRechts"] = fan2.speed > 0
-                sensor_data["peltierEnabledLinks"] = peltiers[0].enabled
-                sensor_data["peltierEnabledRechts"] = peltiers[1].enabled
-                
-                # Huidige temperaturen verzenden als JSON naar websocket
-                json_string = json.dumps(sensor_data)
-                websocket.send_message(json_string, fail_silently=True)
-                
-            except Exception as e:
-                print("WebSocket fout:", e)
-                websocket = None 
-        await asyncio.sleep(0.5)
-
 # =========================================================
-# NETWERK SETUP & SERVER ROUTES
+# NETWERK SETUP & ROUTES
 # =========================================================
 print(f"Opstart WiFi AP: {AP_SSID}...")
 wifi.radio.start_ap(AP_SSID, AP_PASSWORD)
 ap_ip = str(wifi.radio.ipv4_address_ap)
-
 pool = socketpool.SocketPool(wifi.radio)
 server = Server(pool, "/",  debug=True)
 
-#HTML bestand
 @server.route("/", GET)
-def serve_html(request: Request):
-    return FileResponse(request, "browsertests.html")
-
-#CSS bestand
+def serve_html(request: Request): return FileResponse(request, "browsertests.html")
 @server.route("/style-webpage.css", GET)
-def serve_css(request: Request):
-    return FileResponse(request, "style-webpage.css")
-
-#Javascript bestand
+def serve_css(request: Request): return FileResponse(request, "style-webpage.css")
 @server.route("/webpage.js", GET)
-def serve_js(request: Request):
-    return FileResponse(request, "webpage.js")
+def serve_js(request: Request): return FileResponse(request, "webpage.js")
 
-# JavaScript gebruiken voor de connectie
 @server.route("/connect-websocket", GET)
 def connect_websocket(request: Request):
-    global websocket
-    if websocket is not None: 
-        websocket.close()
-    websocket = Websocket(request)
-    print("Websocket verbonden!")
-    return websocket
+    global all_clients
+    ws = Websocket(request)
+    all_clients.append(ws) 
+    print(f"Nieuwe connectie! Wachtrij lengte: {len(all_clients)}")
+    return ws
 
-# =========================================================
-# MAIN RUNNER
-# =========================================================
 async def main():
     global mijn_sensoren
-    mijn_sensoren = initialiseer_sensoren()
-    
-    server.start(ap_ip)
-    print(f"Server draait op http://{ap_ip}")
-    
-    await asyncio.gather(
-        poll_server(),
-        handle_websocket(),
-        lees_sensoren_taak(),
-        regel_hardware_taak()
-    )
+    try:
+        mijn_sensoren = initialiseer_sensoren()
+        server.start(ap_ip)
+        print(f"Server draait op http://{ap_ip}"+":5000")
+        await asyncio.gather(poll_server(), handle_websocket(), lees_sensoren_taak(), regel_hardware_taak())
+    except Exception as e:
+        print(f"Kritieke fout: {e}")
+        time.sleep(5)
 
 asyncio.run(main())
