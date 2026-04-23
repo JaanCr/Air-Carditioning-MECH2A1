@@ -48,7 +48,7 @@ class PeltierHBridge:
         self.Ki = Ki
         self.Kd = Kd
 
-        self.enabled = True # System starts as ON
+        self.enabled = False # System starts as ON
         self.integral = 0
         self.last_error = 0
         self.target = 20.0
@@ -150,12 +150,13 @@ sensor_data = {
     "statusBuiten": False,
     "fanStatusLinks": False,
     "fanStatusRechts": False,
-    "peltierEnabledLinks": True,
-    "peltierEnabledRechts": True,
+    "peltierEnabledLinks": False,
+    "peltierEnabledRechts": False,
     "queue_pos": 0 
 }
 
 ruwe_temps = {"Links": None, "Rechts": None}
+
 all_clients = []
 
 fan1 = Fan(board.GP16) # Links
