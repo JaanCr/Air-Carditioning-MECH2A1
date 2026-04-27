@@ -1,3 +1,5 @@
+from typing import Any
+
 import time
 import board
 import pwmio
@@ -41,24 +43,28 @@ class Fan:
 
 class PeltierHBridge:
     def __init__(self, pin_rpwm, pin_lpwm, Kp=1.0, Ki=0.05, Kd=0.2):
+    #def __init__(self, pin_rpwm, pin_lpwm, deadband = 0.5):
         self.rpwm = pwmio.PWMOut(pin_rpwm, frequency=20000, duty_cycle=0)
         self.lpwm = pwmio.PWMOut(pin_lpwm, frequency=20000, duty_cycle=0)
 
-        self.Kp = Kp
+        self.Kp = Kp    #verwijder als Hysteris
         self.Ki = Ki
         self.Kd = Kd
 
-        self.enabled = False # System starts as ON
-        self.integral = 0
-        self.last_error = 0
+        #self.deadband = deadband
         self.target = 20.0
-        self.last_direction = 0
+        self.enabled = False # System starts as OFF
+
+        self.integral = 0       #verwijder als Hysteris
+        self.last_error = 0
+        
+        self.current_state = 0
         self.last_switch_time = time.monotonic()
         self.switch_delay = 4.0  
         self.is_switching = False  
         self.last_update = time.monotonic()
 
-    def reset_pid(self):
+    def reset_pid(self):        # verwijder als Hysteris + verwijder in stopall logic
         self.integral = 0
         self.last_error = 0
 
@@ -66,7 +72,7 @@ class PeltierHBridge:
         self.target = float(t)
 
     def set_output(self, direction, power):
-        power = max(0, min(1, power))
+        power = max(0, min(1, power))       # verwijder als Hysteris
         duty = int(power * 65535)
 
         if direction == 0:
@@ -78,6 +84,51 @@ class PeltierHBridge:
         elif direction == -1:  # verwarmen
             self.rpwm.duty_cycle = 0
             self.lpwm.duty_cycle = duty
+
+    #def update(self, current_temp):
+    #    if current_temp is None or not self.enabled:
+    #        self.set_output(0, 0)
+    #        self.current_state = 0
+    #        return
+
+    #    now = time.monotonic()
+
+        # --- Safety: Polarity Switch Pause ---
+    #    if self.is_switching:
+    #        self.set_output(0, 0)
+    #        if now - self.last_switch_time >= self.switch_delay:
+    #            self.is_switching = False
+    #            print("Switching pause finished.")
+    #        return
+
+        # --- Hysteresis Logic ---
+        # Cooling Logic
+    #    if current_temp > (self.target + self.deadband):
+    #        if self.current_state == -1: 
+    #            self._start_switch_pause()
+    #        else:
+    #            self.set_output(1, 1) 
+    #            self.current_state = 1
+                
+        # Heating Logic
+    #    elif current_temp < (self.target - self.deadband):
+    #        if self.current_state == 1: 
+    #            self._start_switch_pause()
+    #        else:
+    #            self.set_output(-1, 1) 
+    #            self.current_state = -1
+                
+        # Within Deadband: Turn OFF
+    #    elif abs(self.target - current_temp) < (self.deadband / 2):
+    #        self.set_output(0, 0)
+    #        self.current_state = 0
+
+    #def _start_switch_pause(self):
+    #    print(f"Safety: Pausing for {self.switch_delay}s before reversing polarity.")
+    #    self.set_output(0, 0)
+    #    self.current_state = 0
+    #    self.is_switching = True
+    #    self.last_switch_time = time.monotonic()
 
     def update(self, current_temp):
         if current_temp is None or current_temp < -20 or current_temp > 50 or not self.enabled:
@@ -115,19 +166,19 @@ class PeltierHBridge:
 
         desired_direction = 1 if output > 0 else -1
 
-        if desired_direction != self.last_direction and self.last_direction != 0:
+        if desired_direction != self.current_state and self.current_state != 0:
             print(f"Polariteitswissel! Pauze van {self.switch_delay}s.")
             self.set_output(0, 0)
             self.last_switch_time = now
             self.is_switching = True
-            self.last_direction = 0
+            self.current_state = 0
             return 0
 
         if output > 0:
-            self.last_direction = 1
+            self.current_state = 1
             self.set_output(1, min(1, output))
         else:
-            self.last_direction = -1
+            self.current_state = -1
             self.set_output(-1, min(1, -output))
 
         return output
