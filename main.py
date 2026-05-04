@@ -48,8 +48,8 @@ class PeltierHBridge:
         self.lpwm = pwmio.PWMOut(pin_lpwm, frequency=20000, duty_cycle=0)
 
         self.Kp = Kp    #verwijder als Hysteris
-        self.Ki = Ki
-        self.Kd = Kd
+        self.Ki = Ki    #
+        self.Kd = Kd    #
 
         #self.deadband = deadband
         self.target = 20.0
@@ -186,7 +186,7 @@ class PeltierHBridge:
 # =========================================================
 # GLOBALE VARIABELEN & INITIALISATIE
 # =========================================================
-ow_bus = OneWireBus(board.GP22)
+ow_bus = OneWireBus(board.GP21)
 mijn_sensoren = []
 
 sensor_data = {
