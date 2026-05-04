@@ -93,12 +93,10 @@ class PeltierHBridge:
 
         now = time.monotonic()
 
-        # --- Safety: Polarity Switch Pause ---
         if self.is_switching:
             self.set_output(0, 0)
             if now - self.last_switch_time >= self.switch_delay:
                 self.is_switching = False
-                print("Switching pause finished.")
             return
 
         # --- Hysteresis Logic ---
@@ -118,13 +116,13 @@ class PeltierHBridge:
                 self.set_output(-1, 1.0) 
                 self.current_state = -1
                 
-        # Within Deadband: Turn OFF
+        # OFF als in deadband
         elif abs(self.target - current_temp) < (self.deadband / 2):
             self.set_output(0, 0)
             self.current_state = 0
 
     def _start_switch_pause(self):
-        print(f"Safety: Pausing for {self.switch_delay}s")
+        print("switching")
         self.set_output(0, 0)
         self.current_state = 0
         self.is_switching = True
